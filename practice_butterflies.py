@@ -10,7 +10,7 @@ import elev_to_topo
 
 model_id = "elevdata-v1"
 
-login('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')
+#enter login here login('')
 
 hub_model_id = get_full_repo_name(model_id)
 
