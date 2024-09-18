@@ -5,7 +5,30 @@ from tqdm import tqdm
 gdal.UseExceptions()
 
 runREST = 0
+run = 0
 dataLen = 200 * 4 * 4
+
+def get_sample(size):
+    ds = gdal.Open('data_in/in.tif')  # 'data_in/in.tif')
+    band = ds.GetRasterBand(1)
+    elevation = band.ReadAsArray()
+
+    xlen = len(elevation)
+    ylen = len(elevation[0])
+
+
+
+    x = np.random.randint(0, xlen-size+1)
+    y = np.random.randint(0, ylen-size+1)
+
+    e = elevation[x:x+size,y:y+size]
+    ema = np.amax(e)
+    emi = np.amin(e)
+    e -= emi
+    e /= (ema-emi)
+    return e
+
+
 
 if runREST:
     ds = gdal.Open('data_in/in.tif')#'data_in/in.tif')
@@ -24,10 +47,10 @@ if runREST:
 
     np.save('data_out/out_200_64bit', new_array[0:dataLen], allow_pickle=True, fix_imports=True)
 
-
-ha = np.load('data_out/out_200_64bit.npy')
-print(np.shape(ha))
-print(ha.dtype)
-plt.imshow(ha[20][0], cmap='gist_earth')
-plt.show()
+if run:
+    ha = np.load('data_out/out_200_64bit.npy')
+    print(np.shape(ha))
+    print(ha.dtype)
+    plt.imshow(ha[20][0], cmap='gist_earth')
+    plt.show()
 
