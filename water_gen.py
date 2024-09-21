@@ -6,7 +6,8 @@ import matplotlib.pyplot as plt
 import handy_functions
 import dataGen
 
-# returns an array of spring locations
+
+# returns an array of spring locations with a density as input
 def spring(datain,density, xlen, ylen):
     #spring gen prop to height for now
     ma = np.amax(datain)
@@ -20,7 +21,8 @@ def spring(datain,density, xlen, ylen):
                springs.append((x,y))
     return springs
 
-# takes in a list of springs and uses them to create water. Unlimited water version
+
+# takes in a list of springs and uses them to create water streams. Unlimited water version
 def draw_water(datain, springs):
     xlen = len(datain)
     ylen = len(datain[0])
@@ -46,6 +48,12 @@ def draw_water(datain, springs):
 
 
 # same as draw_water but allows the water to erode to hopefully create more realistic paths
+# Main Parameters:
+#   erode_rate: the rate at which the flowing water erodes nearby tiles
+#   water_height: the default height of water
+#   water_increase_height: the amount water raises in height if it finds itself in a hole - good for filling in lakes
+#   max_momentum: water accumulates momentum over time if it does not erode. This is the max momentum.
+#   momentum: increases the rate of erosion
 def draw_water_erode(datain, springs):
     xlen = len(datain)
     ylen = len(datain[0])
@@ -60,13 +68,10 @@ def draw_water_erode(datain, springs):
         (x,y) = (cx,cy)
         cont = True
         momentum = 0
-
-
         while cont:
-            #if water[x][y] < water_height: water[x][y]= water_height
             water[x][y] += water_height
             datain[x][y] += water_height
-            (ax,ay, minVal) = handy_functions.getMinNbr(datain, xlen, ylen, x, y)
+            (ax, ay, minVal) = handy_functions.getMinNbr(datain, xlen, ylen, x, y)
 
             nbrs = handy_functions.get_valid_nbrs(xlen,ylen,x,y)
             nbr_cnt = 0
@@ -75,8 +80,10 @@ def draw_water_erode(datain, springs):
                     nbr_cnt += 1
                     datain[nx][ny] -= erode_rate * momentum
             if nbr_cnt<6:
+                # if few eroded neighbors, we speed up
                 momentum += 1
             elif nbr_cnt>=7:
+                # if many eroded neighbors, we slow down
                 momentum -= 1
             if momentum <0: momentum = 0
             elif momentum>max_momentum: momentum=max_momentum
@@ -92,15 +99,24 @@ def draw_water_erode(datain, springs):
                 (x,y) = (ax,ay)
     return water
 
-# breaks momentum to avoid streight lines, runs cycles of water gen and drying to create paths
+
+# same as draw_water_erode breaks momentum to avoid straight lines (by depositing sediment once max momentum is reached)
+# runs cycles of water gen and drying to create paths
+# Main Parameters and Variables:
+#   erode_rate: the rate at which the flowing water erodes nearby tiles
+#   water_height: the default height of water
+#   water_increase_height: the amount water raises in height if it finds itself in a hole - good for filling in lakes
+#   max_momentum: water accumulates momentum over time if it does not erode. This is the max momentum.
+#   momentum: increases the rate of erosion
+#   direction: the direction water is currently flowing. Ranges [-4,4] and calculated by: dx + 3*dy
 def draw_water_erode2(datain, springs, itter):
     xlen = len(datain)
     ylen = len(datain[0])
     water = np.zeros((xlen, ylen))
 
-    erode_rate = .0009
-    water_height = .001
-    water_increase_height = .005
+    erode_rate = .18 / handy_functions.unit_height
+    water_height = .2 / handy_functions.unit_height
+    water_increase_height = 1 / handy_functions.unit_height
     max_momentum = 10
 
     for i in tqdm(range(itter)):
@@ -111,10 +127,8 @@ def draw_water_erode2(datain, springs, itter):
             (x,y) = (cx,cy)
             cont = True
             momentum = 0
-            direction = 0 #-4 to 4 0 is same point
+            direction = 0 # -4 to 4. 0 is same point
             sediment = 0
-
-
             while cont:
                 # once we surpass max momentum, we will drop off all sediment directly in front of us.
                 if momentum > max_momentum:
@@ -133,7 +147,6 @@ def draw_water_erode2(datain, springs, itter):
                             momentum = max_momentum
                         sediment = 0
 
-                #if water[x][y] < water_height: water[x][y]= water_height
                 water[x][y] += water_height
                 datain[x][y] += water_height
 
@@ -167,21 +180,26 @@ def draw_water_erode2(datain, springs, itter):
                     (x,y) = (ax,ay)
                 direction = direction2
     return water
+
+
 if False:
     datain = dataGen.get_sample(2048) #handy_functions.erode_Semi(handy_functions.genSample(256,256),10)
     s = spring(datain, 1/(256*256), 2048, 2048)
     datain2 = np.copy(datain)
-    water = draw_water_erode2(datain2,s,10)
+    water = draw_water_erode2(datain2,s,25)
 
-    datain3 = np.copy(datain)
-    water3 = draw_water_erode2(datain3, s,20)
+    hill = handy_functions.hillshade(datain, 0,30)
+    hill2 = handy_functions.hillshade(datain2, 0, 30)
+    first_row = np.concatenate((datain, datain2), axis=1)
+    second_row = np.concatenate((datain, water*10), axis=1)
 
-    first_row = np.concatenate((datain, datain2, datain3), axis=1)
-    second_row = np.concatenate((datain, water*10,water3*10), axis = 1)
-
-    plt.imshow(np.concatenate((first_row,second_row),axis = 0),cmap='gist_earth')
+    plt.imshow(water, cmap='gist_earth')
     plt.show()
 
-    plt.imshow(np.concatenate((water, water3), axis=1),cmap='gist_earth')
+    handy_functions.plot_hillshade(first_row, np.concatenate((hill,hill2),axis=1))
+
+    plt.imshow(np.concatenate((first_row,second_row),axis=0),cmap='gist_earth')
     plt.show()
+
+
 

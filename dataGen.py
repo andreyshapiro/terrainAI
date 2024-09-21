@@ -28,13 +28,27 @@ def get_sample(size):
     e /= (ema-emi)
     return e
 
+def get_sample_unnormed(size):
+    ds = gdal.Open('data_in/in.tif')  # 'data_in/in.tif')
+    band = ds.GetRasterBand(1)
+    elevation = band.ReadAsArray()
 
+    xlen = len(elevation)
+    ylen = len(elevation[0])
+
+
+
+    x = np.random.randint(0, xlen-size+1)
+    y = np.random.randint(0, ylen-size+1)
+
+    e = elevation[x:x+size,y:y+size]
+    return e
 
 if runREST:
     ds = gdal.Open('data_in/in.tif')#'data_in/in.tif')
     band = ds.GetRasterBand(1)
     elevation = band.ReadAsArray()
-
+    print(len(elevation))
     brick = 64
     l = len(elevation)
     cnt = l//brick

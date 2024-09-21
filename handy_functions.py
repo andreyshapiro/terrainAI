@@ -3,15 +3,15 @@ from tqdm import tqdm
 import matplotlib.cm as mat1
 import matplotlib.colors as mat2
 import matplotlib.pyplot as plt
-
-
-earth = mat1.get_cmap('gist_earth')
-rgba = earth([[0.1,0.5],[0.03,1.0]])
-print(rgba)
+#import earthpy.spatial as es
+import dataGen
 
 buffer = 4
+unit_length = 33 # feet
+unit_height = 1 # feet
+water_max = 300 # feet
 
-# returns a list of valid neighbors (a,b)
+# Returns a list of valid neighbors (a,b)
 def get_valid_nbrs(xlen, ylen, x, y):
     out = []
     xB = x>0
@@ -31,7 +31,7 @@ def get_valid_nbrs(xlen, ylen, x, y):
 
     return out
 
-# creates a sphere of indicies centered at (0,0)
+# Creates a sphere of indecies centered at (0,0)
 def create_sphere(radius):
     out = []
     r2 = radius**2
@@ -39,23 +39,23 @@ def create_sphere(radius):
         for j in range(-radius,radius+1):
             if i**2 + j**2 <= r2: out.append((i,j))
     return out
-#runs simple local convolution
+
+# Runs simple local convolution
 def convo(data):
-    (y,x,z) = np.shape(data)
+    (y,x) = np.shape(data)
     cdata = np.zeros((y,x))
-    for i in range(buffer,y-buffer):
+    for i in tqdm(range(buffer,y-buffer)):
         for j in range(buffer, x-buffer):
             v = [0,0,0,0,0]
             for ib in range(-buffer,buffer+1):
                 for jb in range(-buffer,buffer+1):
                     k = abs(ib) + abs(jb)
                     if(k<=4):
-                        v[k] += data[i+ib][j+jb][0]
+                        v[k] += data[i+ib][j+jb]
             cdata[i][j] = (v[0]/2) + (v[1]/16) + (v[2]/64) + (v[3]/192) + (v[4]/256)
     for i in range(buffer,y-buffer):
         for j in range(buffer, x-buffer):
-            data[i][j][0] = cdata[i][j]
-
+            data[i][j] = cdata[i][j]
 
 # Turns an elevation map into a contour map at specified intervals via marching squares algorithm
 def e_to_t(data, interval):
@@ -113,7 +113,8 @@ def e_to_tF(data, interval):
             out[ylen][i + 1] = 1
     return out
 
-#gets min neighbor (of 9) with off-screen being -infty. Option to add modifier to central square
+# Gets min neighbor (of 9) with off-screen being -infty (in which case it returns (-1,-1,-1).
+# Option to add modifier to central square
 def getMinNbr(data, xlen, ylen, x ,y, *args):
 
     if (x==0 or y==0 or x==xlen-1 or y==ylen-1):
@@ -151,7 +152,14 @@ def getMinNbr(data, xlen, ylen, x ,y, *args):
             (ax, ay) = (x-1,y-1)
         return (ax, ay, minVal)
 
-#simulates erosion via many random droplets
+# Simulates erosion via many random droplets. Droplet will collect sediment, at each step it will collect
+# a fraction of it's remaining capacity and evaporate a bit. This continues until the droplet evaporates or
+# gets stuck in a hole.
+# Main Parameters:
+#   collection_rate: fraction of remaining capacity (volume of the droplet) to be collectd at each step
+#   size: starting volume of the droplet
+#   evap_rate: volume of the droplet will decrease by this much at each step - any spillover of sediment will
+# be deposited immediately.
 def erode_Random(datain, itter):
     xlen = len(datain)
     ylen = len(datain[0])
@@ -165,28 +173,28 @@ def erode_Random(datain, itter):
     for i in tqdm(range(itter)):
         water = size
         sediment = 0
-        cap = size
+
         x = np.random.randint(0, xlen)
         y = np.random.randint(0, ylen)
 
         while(water>0):
-            #evaporate
+            # evaporate
             water -= evap_rate
             if water >= sediment:
                 cap = water - sediment
             else:
-                #deposit
-                data[x][y] += sediment-water
+                # deposit spillover
+                data[x][y] += sediment - water
                 sediment = water
                 cap = 0
 
-            #collect sediment
+            # collect sediment
             collect = cap * collection_rate
             collect2 = collect / 10
-            collect_count = 2  # automatically pick up two since no conflicts
+            collect_count = 2  # automatically pick up two on the spot since no conflicts
             data[x][y] -= 2 * collect2
 
-            # collect half as much from neigbors
+            # collect half as much from neighbors
             if x > 0:
                 data[x - 1][y] -= collect2
                 collect_count += 1
@@ -214,20 +222,20 @@ def erode_Random(datain, itter):
 
             sediment += collect_count * collect2
 
-            #step
+            # step
             (ax, ay, minVal) = getMinNbr(data, xlen, ylen, x, y)
             if ax<0:
-                #if out of bounds exit loop
+                # if out of bounds exit loop
                 water = 0
             if (x,y)==(ax,ay):
                 # if droplet is in a hole, deposit all sediment and quit
                 data[x][y] += sediment
                 water = 0
-            #update step
+            # update step
             (x,y) = (ax,ay)
     return data
 
-#simulates erosion via simultanius rain droplets (UNFINISHED)
+# Simulates erosion via simultaneous rain droplets (UNFINISHED)
 def erode_Simul(datain, itter):
     xlen = len(datain)
     ylen = len(datain[0])
@@ -331,43 +339,51 @@ def erode_Simul(datain, itter):
     print("quiting!")
     return data
 
-# a different approach to Simul
+# Simulates erosion via few semi-simultaneous rain droplets over several iterations.
+# Droplets are semi-simultaneous in that their paths are determined sequentially but
+# can still interact with each other's heights, thereby allowing wide riverbeds to form.
+# Main Parameters:
+#   water_Volume: how many water droplets are generated semi-simultaneously.
+#   collection_rate: fraction of remaining capacity (volume of the droplet).
+#   size: starting volume of the droplet.
+#   stepLen: maximum length of a path a droplet can take. This really just functions
+# as a failsafe against infinite loops.
+# Note: water_Volume and size may be set dynamically. Generally we want to run a few batches
+# of large water_Volume followed by many iterations of small water_Volume
 def erode_Semi(datain,itter):
     xlen = len(datain)
     ylen = len(datain[0])
 
-    #this is the elevation data of each square including sediment and any stable water
+    # This is the elevation data of each square including sediment and any stable water
     data = np.copy(datain)
 
-    water_Volume = 65536
+    water_Volume = 1 #65536
 
-    #zzz consider making the collection rate larger than size
-
-    #(.04,.0001) for good rivers, (.04,.0005) WV 20.
+    # Note to self: consider making the collection rate larger than size
+    # (.04,.0001) for good rivers, (.04,.0005) WV 20.
     collection_rate = .1
     size = .001
     stepLen = 1200
 
-    reps = 131072 * 2 - 2 #itter*ylen*xlen//160#//2000
+    reps = itter #131072 * 2 - 2 #itter*ylen*xlen//160#//2000
 
     l = 1
     # 2^16
 
     for i in tqdm(range(reps)):
 
-        #dynamic water_Volume
-        if i>l and l<16:
-            l = l * 2
-            if l>= 16:
-                water_Volume = 1
-            else:
-                water_Volume=water_Volume // 2
-
-
-        #dynamic size
-        #size = size * .9999
+        # dynamic water_Volume
+        # Note to self: currently this is configured for 256x256
+        # it may be better to set a dynamic allocation more explicitly.
+        # if i>l and l<16:
+        #     l = l * 2
+        #     if l>= 16:
+        #         water_Volume = 1
+        #     else:
+        #         water_Volume=water_Volume // 2
 
         # degenerate case with one droplet
+        # this is essentially erode_Random but without evaporation
         if(water_Volume == 1):
             sediment = 0
 
@@ -384,9 +400,9 @@ def erode_Semi(datain,itter):
                 if sediment < size:
                     collect = collection_rate * (size - sediment)
                     collect2 = collect / 10
-                    collect_count = 2 #automatically pick up two since no conflicts
+                    collect_count = 2 # automatically pick up two since no conflicts
 
-                    # collect half as much from neigbors
+                    # collect half as much from neighbors
                     if x > 0:
                         data[x - 1][y] -= collect2
                         collect_count += 1
@@ -435,19 +451,20 @@ def erode_Semi(datain,itter):
 
                 step += 1
         else:
+            # The case where water_Volume is not 1
+
             water = np.zeros((xlen, ylen))
             sediment = 0
 
-            #rain-fall
+            # rain-fall
             for j in range(water_Volume):
 
                 x = np.random.randint(0, xlen)
                 y = np.random.randint(0, ylen)
 
-                cont = True
                 step = 0
 
-                while(cont):
+                while(True):
 
                     # collect sediment
                     if sediment<size:
@@ -455,10 +472,9 @@ def erode_Semi(datain,itter):
                         collect2 = collect / 10
                         collect_count = 0
 
-                        #collect_count += 2
                         if water[x][y] == 0: collect_count += 2
 
-                        #collect half as much from neigbors
+                        # collect half as much from neigbors
                         if x>0:
                             if water[x-1][y] == 0:
                                 data[x-1][y] -= collect2
@@ -499,7 +515,6 @@ def erode_Semi(datain,itter):
                     (ax, ay, minVal) = getMinNbr(data, xlen, ylen, x, y, -sediment)
                     if ax < 0:
                         # if out of bounds exit loop
-                        cont = False
 
                         # the tile looses its sediment, water never becomes stable and is lost
                         data[x][y] -= sediment
@@ -511,27 +526,45 @@ def erode_Semi(datain,itter):
                         data[x][y] += size
                         water[x][y] += size
 
-                        cont = False
                         break
+
                     # update step
-                    #data[x][y] -= sediment
                     data[x][y] -= sediment
                     data[ax][ay] += sediment
                     (x, y) = (ax, ay)
 
                     step += 1
 
-
-            #print("drop:", drop_cnt, " stop:", stop_cnt, "forced:", force_cnt)
             # at the end of the rainfall, all the water dries and
             # leaves only ground elevation with new sediment
             data = np.subtract(data, water)
 
     return data
 
-# Shade an elevation map according to gradient - helps to make the image look 3d (UNFINISHED)
-def eShader(data):
-    return 0
+# Shade an elevation map according to gradient - helps to make the image look 3d
+# code taken from this site: https://www.neonscience.org/resources/learning-hub/tutorials/create-hillshade-py
+def hillshade(array, azimuth, angle_altitude):
+    azimuth = 360.0 - azimuth
+
+    x, y = np.gradient(array)
+    slope = np.pi / 2. - np.arctan(np.sqrt(x * x + y * y))
+    aspect = np.arctan2(-x, y)
+    azm_rad = azimuth * np.pi / 180.  # azimuth in radians
+    alt_rad = angle_altitude * np.pi / 180.  # altitude in radians
+
+    shaded = np.sin(alt_rad) * np.sin(slope) + np.cos(alt_rad) * np.cos(slope) * np.cos((azm_rad - np.pi / 2.) - aspect)
+
+    return (shaded + 1) / 2
+
+
+# Given an array and its hillshade, it plots them over each other
+def plot_hillshade(array, shaded_array):
+    fig, ax = plt.subplots(1, 1, figsize=(6, 6))
+    im1 = plt.imshow(array, cmap='terrain')
+    cbar = plt.colorbar()
+    cbar.set_label('Elevation, m', rotation=270, labelpad=20)
+    im2 = plt.imshow(shaded_array, cmap='Greys_r', alpha=0.8)  # plt.colorbar()
+    plt.show()
 
 # creates an elevation map with simple hills for testing use
 def genSample(xlen, ylen):
@@ -556,12 +589,18 @@ def genSample(xlen, ylen):
                         out[x + j][y - k] += frac * d
     return out
 
-def Main():
+
+if False:
     print("eroding")
 
-    tem = genSample(256,256)
+    tem = dataGen.get_sample(256)#genSample(256,256)
 
-    k = erode_Semi(tem, 10)
+    k = erode_Semi(tem, 100000)
+
+    hill = hillshade(tem, 0, 30)
+    hill2 = hillshade(k, 0, 30)
+
+    plot_hillshade(np.concatenate((tem,k),axis=1),np.concatenate((hill,hill2),axis=1))
 
     out = np.concatenate((tem, k, np.subtract(k,tem)),axis = 1)
     plt.imshow(out,cmap='gist_earth')
