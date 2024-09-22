@@ -27,7 +27,7 @@ def get_valid_nbrs(xlen, ylen, x, y):
         if yB: out.append((x+1, y-1))
         if yS: out.append((x+1, y+1))
     if yB: out.append((x,y-1))
-    if yS: xB:out.append((x,y+1))
+    if yS: out.append((x,y+1))
 
     return out
 
