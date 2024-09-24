@@ -7,6 +7,11 @@ import handy_functions
 import water_gen
 import dataGen
 import veg_gen
+import bisect
+
+aspect = handy_functions.unit_height / handy_functions.unit_length
+h_val = 32
+path_factor = 8
 
 # Overview:
 # 1) reason for settlement maps
@@ -19,7 +24,7 @@ import veg_gen
 #                    growth in size of buildings
 #       linear: valley floors, river, water body, road. Agriculture
 # 3) initial cluster
-#       seed population, divide into houses, plant houses and their mode of resource
+#       seed population, divide into houses, plant houses, and their mode of resource
 # 4) types of buildings, events: https://knightstemplar.co/from-taverns-to-towers-a-glimpse-into-medieval-city-constructs/
 #       residence: house, large farm house, townhouse, mannor
 #       authority: temple, town hall, constabulary, armory, guild houses
@@ -38,6 +43,7 @@ import veg_gen
 #       roads built with cluster, new road made every time a building is built not adjacent to one. Use dextra algorithm
 # with harsh punishment for gradient. Roads are paved by proximity to important places (may not wory about paving)
 #
+
 
 class village_seed():
     def __init__(self,x,y):
@@ -58,9 +64,12 @@ class village_seed():
               str(self.population) + ", Wealth: " + str(self.wealth) + "]\n") + str(self.A_T) + str(self.industries) +
              "\n Families: " + str(len(self.families_list))) + ", Buildings: " + str(len(self.building_list))
         return p
+
+
 class family():
     def __init__(self, num):
         self.size = num
+
 
 class building():
     def __init__(self, x, y, type):
@@ -75,6 +84,253 @@ class building():
         for (a,b) in self.location:
             if (a,b) == (x,y): return True
         return False
+
+class travel_graph():
+    def __init__(self, xlen, ylen, bottom_left):
+        self.bottom_left = bottom_left
+        self.shape = (xlen, ylen)  # this implicitly defines the nodes
+        self.edgesLR = np.full((xlen-1,ylen),1.0)
+        self.edgesDU = np.full((xlen,ylen-1),1.0)
+        self.edges01 = np.full((xlen-1,ylen-1), 1.414)
+        self.edges10 = np.full((xlen - 1, ylen - 1), 1.414)
+
+        self.path_edgesLR = np.full((xlen - 1, ylen), False)
+        self.path_edgesDU = np.full((xlen, ylen - 1), False)
+        self.path_edges01 = np.full((xlen - 1, ylen - 1), False)
+        self.path_edges10 = np.full((xlen - 1, ylen - 1), False)
+
+
+    def get_edges(self, m, n):
+        es = []
+        xlen, ylen = self.shape
+        if m>0:
+            es.append((m-1,n,self.edgesLR[m-1][n]))
+            if n>0:
+                es.append((m-1,n-1, self.edges01[m-1][n-1]))
+            if n<ylen-1:
+                es.append((m - 1, n + 1, self.edges10[m - 1][n]))
+        if m<xlen-1:
+            es.append((m+1,n,self.edgesLR[m][n]))
+            if n>0:
+                es.append((m+1,n-1, self.edges10[m][n-1]))
+            if n<ylen-1:
+                es.append((m + 1, n + 1, self.edges10[m][n]))
+        if n>0:
+            es.append((m,n-1,self.edgesDU[m][n-1]))
+        if n<ylen-1:
+            es.append((m,n+1,self.edgesDU[m][n]))
+        return es
+
+    # takes in a LOCAL indexed path
+    def update_path(self, path):
+        (a,b) = path[0]
+        for (x,y) in path[1:]:
+            dx = x-a
+            dy = y-b
+            if dx == 0:
+                corner = min(y,b)
+                if not self.path_edgesDU[x][corner]:
+                    self.path_edgesDU[x][corner] = True
+                    self.edgesDU[x][corner] /= path_factor
+            elif dy == 0:
+                corner = min(x, a)
+                if not self.path_edgesLR[corner][y]:
+                    self.path_edgesLR[corner][y] = True
+                    self.edgesLR[corner][y] /= path_factor
+            elif dx-dy == 0:
+                corner = min(x,a)
+                corner2 = min(y,b)
+                if not self.path_edges01[corner][corner2]:
+                    self.path_edges01[corner][corner2] = True
+                    self.edges01[corner][corner2] /= path_factor
+            elif dx*dy == -1:
+                corner = min(x, a)
+                corner2 = min(y, b)
+                if not self.path_edges10[corner][corner2]:
+                    self.path_edges10[corner][corner2] = True
+                    self.edges10[corner][corner2] /= path_factor
+
+            (a,b) = (x,y)
+
+
+# given a graph, and two points, it will find the shortest path between them and an updated graph.
+def path_maker(graph, datain, x1, y1, x2, y2):
+    # first we find the nodes the points correspond to
+    (w, z) = graph.bottom_left
+    (m1, n1)= (x1-w,y1-z)
+    (m2, n2) = (x2-w,y2-z)
+
+    height_goal = datain[x2][y2]
+
+    # now we find the shortest path
+    xlen, ylen = graph.shape
+    max_v = xlen*ylen*256
+    graphcopy = np.full((xlen,ylen,4), (max_v, 0, -1,-1)) #g, n/open/closed, parent_x, parent_y)
+    print("finished initiating graphcopy")
+
+    node_stack = [(0,m1,n1,0,0)]  # (f, x, y, g, h)
+
+    print_val = 10
+    print_val2 = 15
+    closed = 0
+    while 1:
+        (f, m, n, g, _) = node_stack.pop(0)
+        if g>print_val:
+            print("g:", g, "h:", f-g)
+            print(len(node_stack))
+            print_val+= 500
+        # value is always strictly improved so update graphcopy and add new directions
+        if (m, n) == (m2, n2): break
+
+        graphcopy[m][n][1] = 2 #close (m,n)
+        closed += 1
+        if closed>print_val2:
+            print("closed", closed)
+            print_val2 += 10000
+
+        # then we add the new edges reached (rather, the nodes they reach at an improved rate, and the directions)
+        es = graph.get_edges(m,n)
+        for (e1,e2,c) in es:
+            if graphcopy[e1][e2][1] == 2: continue # location is closed -> skip it.
+            if g+c < graphcopy[e1][e2][0]:
+                if graphcopy[e1][e2][1] == 1:  # if location open, then find and delete it before adding it in again
+                    k = 0
+                    while 1:
+                        if node_stack[k][1:3] == (e1,e2):
+                            node_stack.pop(k)
+                            break
+                        k+= 1
+                graphcopy[e1][e2] = (g+c, 1, m, n)
+
+                # calculate the heuristic: difference in altitudes + # of tiles
+                h = np.sqrt(np.abs(e1-m2)**2 + np.abs(e2-n2)**2) + np.abs(datain[w+e1][z+e2] - height_goal) * aspect * h_val / path_factor
+
+                # add in the new node, and sort according to h+g2
+                bisect.insort(node_stack,(c+g+h,e1,e2,c+g,h))
+        if not node_stack:
+            print("out of options! Broke at", m,n)
+            break
+
+    print("while loop exited")
+    # once done, retrace steps:
+    outpath = [(m2,n2)]
+    (_,_,x,y) = graphcopy[m2][n2]
+    while (x,y) != (m1,n1) and (x,y) != (-1,-1):
+        # add the tile to the path
+        outpath.append((x,y))
+        (_,_,x,y) = graphcopy[x][y]
+    if (x,y) != (-1,-1):
+        outpath.append((x,y))
+    else: print("final destination not reached!")
+
+    outpath = np.array(outpath) + (w,z)
+    return (graphcopy[m2][n2][0], outpath) # a pair: value, directions
+
+
+# given a graph, updates its edges
+def graph_maker(graph, datain, structure, water):
+    (a,b) = graph.bottom_left
+    xlen, ylen = graph.shape
+    max_v = xlen * ylen * 256
+    for xi in range(xlen-1):
+        x = a+xi
+        for yj in range(ylen-1):
+            y = b+yj
+            # need to set any paths as such in the graph
+            if structure[x][y] <= -1 :
+                if structure[x+1][y] <= -1:
+                    graph.path_edgesLR[xi][yj] = True
+                if structure[x][y+1] <= -1:
+                    graph.path_edgesDU[xi][yj] = True
+                if structure[x+1][y+1] <= -1:
+                    graph.path_edges01[xi][yj] = True
+            if structure[x+1][y] <= -1 and structure[x][y+1] <= -1:
+                graph.path_edges10[xi][yj] = True
+
+
+            # if either contain water and no bridge: if the water is deep - impassible, if shallow then cost 100
+            # if there is a proper building (structure value>0) - impassible
+            if structure[x][y]>0 or (water[x][y] > 1 and structure[x][y]>=-1):
+                graph.edgesLR[xi][yj] = max_v
+                graph.edgesDU[xi][yj] = max_v
+                graph.edges01[xi][yj] = max_v
+            else:
+                if structure[x+1][y]>0 or (water[x + 1][y] > 1 and structure[x+1][y]>=-1):
+                    graph.edgesLR[xi][yj] = max_v
+                elif (water[x + 1][y] > 0 and structure[x+1][y]>=-1) or (water[x][y] > 0  and structure[x][y]>=-1):
+                    graph.edgesLR[xi][yj] = 250
+                    if graph.path_edgesLR[xi][yj]: graph.edgesLR[xi][yj] /= path_factor
+                else:
+                    # no water or buildings: we measure height change 1+slope^2
+                    graph.edgesLR[xi][yj] = (1 + np.abs(datain[x][y]-datain[x+1][y]) * aspect) ** h_val
+                    if graph.path_edgesLR[xi][yj]: graph.edgesLR[xi][yj] /= path_factor
+                if structure[x][y+1]>0 or (water[x][y+1] > 1 and structure[x][y+1]>=-1):
+                    graph.edgesDU[xi][yj] = max_v
+                elif (water[x][y+1] > 0 and structure[x][y+1]>=-1) or (water[x][y] > 0  and structure[x][y]>=-1):
+                    graph.edgesDU[xi][yj] = 250
+                    if graph.path_edgesDU[xi][yj]: graph.edgesDU[xi][yj] /= path_factor
+                else:
+                    # no water or buildings: we measure height change 1+slope^2
+                    graph.edgesDU[xi][yj] = (1 + np.abs(datain[x][y] - datain[x][y+1]) * aspect) ** h_val
+                    if graph.path_edgesDU[xi][yj]: graph.edgesDU[xi][yj] /= path_factor
+                if structure[x+1][y+1]>0 or (water[x+1][y+1] > 1 and structure[x+1][y+1]>=-1):
+                    graph.edges01[xi][yj] = max_v
+                elif (water[x+1][y+1] > 0 and structure[x+1][y+1]>=-1) or (water[x][y] > 0 and structure[x][y]>=-1):
+                    graph.edges01[xi][yj] = 250
+                    if graph.path_edges01[xi][yj]: graph.edges01[xi][yj] /= path_factor
+                else:
+                    # no water or buildings: we measure height change 1+slope^2
+                    graph.edges01[xi][yj] *= (1 + np.abs(datain[x][y] - datain[x+1][y+1]) * aspect) ** h_val
+                    if graph.path_edges01[xi][yj]: graph.edges01[xi][yj] /= path_factor
+            if (structure[x][y+1]>0 or structure[x+1][y]>0 or
+                    (water[x][y+1] > 1 and structure[x][y+1]>=-1) or (water[x+1][y] > 1 and structure[x+1][y]>=-1)):
+                graph.edges10[xi][yj] = max_v
+            elif (water[x][y+1] > 0 and structure[x][y+1]>=-1) or (water[x+1][y] > 0  and structure[x+1][y]>=-1):
+                graph.edges10[xi][yj] = 250
+                if graph.path_edges10[xi][yj]: graph.edges10[xi][yj] /= path_factor
+            else:
+                # no water or buildings: we measure height change 1+slope^2
+                graph.edges10[xi][yj] *= (1 + np.abs(datain[x][y+1] - datain[x+1][y]) * aspect) ** h_val
+                if graph.path_edges10[xi][yj]: graph.edges10[xi][yj] /= path_factor
+
+    for xi in range(xlen-1):
+        x = a+xi
+        y = b+ylen-1
+
+        # again, need to update path flags.
+        if (structure[x][y] <= -1) and (structure[x+1][y] <= -1):
+            graph.path_edgesLR[xi][ylen-1] = True
+
+        if (structure[x][y] > 0 or structure[x+1][y]>0 or
+                (water[x][y] > 1 and structure[x][y] >= -1) or (water[x + 1][y] > 1 and structure[x+1][y]>=-1)):
+            graph.edgesLR[xi][ylen-1] = max_v
+
+        elif water[x+1][y] > 0 and structure[x+1][y]>=-1:
+            graph.edgesLR[xi][ylen-1] = 250
+            if graph.path_edgesLR[xi][ylen - 1]: graph.edgesLR[xi][ylen - 1] /= path_factor
+        else:
+            graph.edgesLR[xi][ylen-1] = (1 + np.abs(datain[x][y] - datain[x+1][y]) * aspect) ** h_val
+            if graph.path_edgesLR[xi][ylen - 1]: graph.edgesLR[xi][ylen - 1] /= path_factor
+    for yj in range(ylen -1):
+        x = a + xlen -1
+        y = b + yj
+
+        # again, need to update path flags.
+        if (structure[x][y] <= -1) and (structure[x][y+1] <= -1):
+            graph.path_edgesDU[xlen-1][yj] = True
+
+        if (structure[x][y] > 0 or structure[x][y+1] > 0 or
+                (water[x][y] > 1 and structure[x][y] >= -1) or (water[x][y+1] > 1 and structure[x][y+1] >= -1)):
+            graph.edgesDUR[xlen-1][yj] = max_v
+        elif water[x][y + 1] > 0 and structure[x][y + 1] >= -1:
+            graph.edgesDU[xlen-1][yj] = 250
+            if graph.path_edgesDU[xlen-1][yj]: graph.edgesDU[xlen-1][yj] /= path_factor
+        else:
+            graph.edgesDU[xlen-1][yj] = (1 + np.abs(datain[x][y] - datain[x][y + 1]) * aspect) ** h_val
+            if graph.path_edgesDU[xlen - 1][yj]: graph.edgesDU[xlen - 1][yj] /= path_factor
+    return
+
+
 def settlement_eval(elev, slope, water, water_dist, tree, shrub, grass):
     xlen = len(elev)
     ylen = len(elev[0])
@@ -304,65 +560,181 @@ def settlement_seeds(settlement_map, water, slope, num):
 
 
     # TEMPORARY
-    radCOLOR = [.5,.5,.5,.5]
-    homeCOLOR = [.8,.8,.8,.8]
-    meetCOLOR = [.5,1,1,1]
-    for v in villages:
-        (x,y) = v.center
-        sphere = handy_functions.create_sphere(v.radius)
-        for (i,j) in sphere:
-            xi = x+i
-            yj = y+j
-            if xi>=0 and yj>=0 and xi<xlen and yj<ylen and water[xi][yj]<=0: settlement_map[xi][yj] *= radCOLOR
+    temp = False
+    if temp:
+        radCOLOR = [.5,.5,.5,.5]
+        homeCOLOR = [.8,.8,.8,.8]
+        meetCOLOR = [.5,1,1,1]
+        for v in villages:
+            (x,y) = v.center
+            sphere = handy_functions.create_sphere(v.radius)
+            for (i,j) in sphere:
+                xi = x+i
+                yj = y+j
+                if xi>=0 and yj>=0 and xi<xlen and yj<ylen and water[xi][yj]<=0: settlement_map[xi][yj] *= radCOLOR
 
-        for b in v.building_list:
-            if b.type >= 400: col = meetCOLOR
-            else: col = homeCOLOR
-            for (a,b) in b.location:
-                settlement_map[a][b] = col
+            for b in v.building_list:
+                if b.type >= 400: col = meetCOLOR
+                else: col = homeCOLOR
+                for (a,b) in b.location:
+                    settlement_map[a][b] = col
 
     return villages
 
+# a temporary testing function for path-finding
+def path_tester(len_in):
+    datain = dataGen.get_sample_unnormed(len_in)
+    s = water_gen.spring(datain, ((2048/len_in)**2) / ( 256 * 256), len_in, len_in)
+    datain2 = np.copy(datain)
+    water = water_gen.draw_water_erode2(datain2, s, 14)
 
-len_in = 2048
-datain = dataGen.get_sample_unnormed(len_in)  # handy_functions.erode_Semi(handy_functions.genSample(256,256),10)
+    struct = np.zeros((len_in,len_in))
 
-s = water_gen.spring(datain, 1 / (256 * 256), len_in, len_in)
-datain2 = np.copy(datain)
-water = water_gen.draw_water_erode2(datain2, s, 14)
+    g = travel_graph(len_in, len_in, (0,0))
+    graph_maker(g, datain2, struct, water)
 
-veg, tree, shrub, grass, slope, water_dist = veg_gen.gen_veg(datain2, water)
+    v, dir = path_maker(g, datain, 50, 100, 500, 450)
+    print("got there at ", v)
 
-set_map = settlement_eval(datain2, slope, water, water_dist, tree, shrub, grass)
+    (a,b) = g.bottom_left
 
-final_seeds = settlement_seeds(set_map, water, slope, 6)
+    showim = handy_functions.hillshade(datain, 0, 30)
+    showim3 = np.dstack((showim,showim,showim))
 
-for v in final_seeds:
-    print(v)
+    for (x,y) in dir:
+        showim3[x][y] = [0.92, 0.67, 0.31]
 
-plt.imshow(slope, cmap='Greys')
-plt.show()
+    for x in range(len_in):
+        for y in range(len_in):
+            if water[x][y]>0: showim3[x][y]=[0,0,1]
 
-plt.imshow(np.sqrt(water_dist), cmap='Oranges')
-plt.show()
+    plt.imshow(showim3)
+    plt.show()
 
-plt.imshow(np.concatenate((tree, shrub, grass), axis=1), cmap='Greens')
-plt.show()
+    g.update_path(dir + (a,b))
 
-# second_row = np.concatenate((veg, np.subtract(veg,water*10)), axis = 1)
-plt.imshow(water, cmap='gist_earth')  # np.concatenate((first_row, second_row), axis =0),cmap='gist_earth')
-plt.show()
+    v, dir = path_maker(g, datain, 50, 500, 500, 50)
+    print("got there at ", v)
 
-plt.imshow(veg)  # cmap='Dark2_r')
-plt.show()
+    for (x,y) in dir:
+        showim3[x][y] = [0.92, 0.67, 0.31]
+
+    plt.imshow(showim3)
+    plt.show()
+
+    g.update_path(dir + (a, b))
+
+
+# a temporary testing function for building paths in and between villages
+def village_path_tester(len_in):
+    datain = dataGen.get_sample_unnormed(len_in)  # handy_functions.erode_Semi(handy_functions.genSample(256,256),10)
+    s = water_gen.spring(datain, 1 / (256 * 256), len_in, len_in)
+    datain2 = np.copy(datain)
+    water = water_gen.draw_water_erode2(datain2, s, 14)
+
+    veg, tree, shrub, grass, slope, water_dist = veg_gen.gen_veg(datain2, water)
+
+    set_map = settlement_eval(datain2, slope, water, water_dist, tree, shrub, grass)
+
+    final_seeds = settlement_seeds(set_map, water, slope, 6)
+
+    # using the villages, create structure map
+    struct = np.zeros((len_in, len_in))
+    for v in final_seeds:
+        for b in v.building_list:
+            for (x,y) in b.location:
+                if b.type >= 400:
+                    struct[x][y] = -b.type
+                else:
+                    struct[x][y] = b.type
+
+    g = travel_graph(len_in, len_in, (0, 0))
+    graph_maker(g, datain2, struct, water)
+
+    showim = handy_functions.hillshade(datain2, 0, 30)
+    showim3 = np.dstack((showim, showim, showim))
+
+    # within each village, connect all houses to meeting square
+    for v in final_seeds:
+        (v1,v2) = v.center
+        for b in v.building_list:
+            if b.type == 1:
+                (x,y) = b.location[0]
+                val, dir = path_maker(g, datain, x, y, v1, v2)
+                print("got there at ", val)
+                g.update_path(dir)
+                for (a,b) in dir:
+                    if struct[a][b] == 0: struct[a][b] = -1
+
+    print("inner paths done")
+
+    for i in range(len(final_seeds)):
+        (v1, v2) = final_seeds[i].center
+        for j in range(i+1,len(final_seeds)):
+            (v3,v4) = final_seeds[j].center
+            if np.sqrt((v1-v3)**2 + (v2-v4)**2) < 10000 / handy_functions.unit_length:
+                val, dir = path_maker(g, datain, v1, v2, v3, v4)
+                print("got there at ", val)
+                g.update_path(dir)
+                for (a, b) in dir:
+                    if struct[a][b] == 0: struct[a][b] = -1
+
+    print("outer paths done")
+
+    for x in range(len_in):
+        for y in range(len_in):
+            if water[x][y] > 0: showim3[x][y] = [0, 0, 1]
+            elif struct[x][y] != 0:
+                if struct[x][y] == -1: showim3[x][y] = [0.92, 0.67, 0.31]
+                elif struct[x][y] == 1: showim3[x][y] = [.7,.7,1]
+                else: showim3[x][y] = [.7,1,.8]
+
+    plt.imshow(showim3)
+    plt.show()
+
+
+village_path_tester(512)
+
+if False:
+    len_in = 2048
+    datain = dataGen.get_sample_unnormed(len_in)  # handy_functions.erode_Semi(handy_functions.genSample(256,256),10)
+
+    s = water_gen.spring(datain, 1 / (256 * 256), len_in, len_in)
+    datain2 = np.copy(datain)
+    water = water_gen.draw_water_erode2(datain2, s, 14)
+
+    veg, tree, shrub, grass, slope, water_dist = veg_gen.gen_veg(datain2, water)
+
+    set_map = settlement_eval(datain2, slope, water, water_dist, tree, shrub, grass)
+
+    final_seeds = settlement_seeds(set_map, water, slope, 6)
+
+    for v in final_seeds:
+        print(v)
+
+    plt.imshow(slope, cmap='Greys')
+    plt.show()
+
+    plt.imshow(np.sqrt(water_dist), cmap='Oranges')
+    plt.show()
+
+    plt.imshow(np.concatenate((tree, shrub, grass), axis=1), cmap='Greens')
+    plt.show()
+
+    # second_row = np.concatenate((veg, np.subtract(veg,water*10)), axis = 1)
+    plt.imshow(water, cmap='gist_earth')  # np.concatenate((first_row, second_row), axis =0),cmap='gist_earth')
+    plt.show()
+
+    plt.imshow(veg)  # cmap='Dark2_r')
+    plt.show()
 
 
 
-plt.imshow(np.delete(set_map, 1, 2))  # cmap='Dark2_r')
-plt.show()
+    plt.imshow(np.delete(set_map, 1, 2))  # cmap='Dark2_r')
+    plt.show()
 
-plt.imshow(np.delete(set_map, 3, 2))  # cmap='Dark2_r')
-plt.show()
+    plt.imshow(np.delete(set_map, 3, 2))  # cmap='Dark2_r')
+    plt.show()
 
 
 
