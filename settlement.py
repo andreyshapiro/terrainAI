@@ -12,20 +12,33 @@ import bisect
 aspect = handy_functions.unit_height / handy_functions.unit_length
 h_val = 32
 path_factor = 8
+TIME_STEP = 10 #years
+
+Building_Dict = {}
+# id, [name, path-like, color]
+L = [[0, ("Empty",0,(0,0,0))],
+     [1, ("House",1,(.7,.7,1))], [3, ("Manner",1,(.73,.73,1))], [-1, ("Path", -1, (0.92, 0.67, 0.31))], [-10, ("Bridge", -2, (0.92, 0.67, 0.31))],
+     [400, ("Meeting Spot", -1, (.7,1,.8))], [401, ("Bell", -1, (.7, 1, .8 ))], [402, ("Meeting Square", -1, (.7, 1, .8 ))],
+     [403, ("Meeting House", 1, (.7, 1, 1))], [404, ("Amphitheater", -1, (.7, 1, .8 ))],
+     [410, ("Well", 1, (.2,.2,1))],
+     [200, ("Dock", -2, (0.82, 0.77, 0.15))]]
+for i in range(len(L)):
+    Building_Dict[L[i][0]] = []
+    Building_Dict[L[i][0]].append(L[i][1])
 
 # Overview:
-# 1) reason for settlement maps
-#       Trade: water, fish (lakes), game (trees),
-#       Agriculture: water, Farming (grass), Herding (shrub)
-# 2) settlement seeds:
-#       nucleated: flat, agriculture or trade -> high speciallization
-#                    growth in number of buildings/specilization
-#       disperced: agriculture, mountinous, -> low professionalism
-#                    growth in size of buildings
-#       linear: valley floors, river, water body, road. Agriculture
-# 3) initial cluster
-#       seed population, divide into houses, plant houses, and their mode of resource
-# 4) types of buildings, events: https://knightstemplar.co/from-taverns-to-towers-a-glimpse-into-medieval-city-constructs/
+# !!! 1) reason for settlement maps
+# !!!      Trade: water, fish (lakes), game (trees),
+# !!!      Agriculture: water, Farming (grass), Herding (shrub)
+# !!! 2) settlement seeds:
+# !!!      nucleated: flat, agriculture or trade -> high speciallization
+# !!!                   growth in number of buildings/specilization
+# !!!      disperced: agriculture, mountinous, -> low professionalism
+# !!!                   growth in size of buildings
+# !!!      linear: valley floors, river, water body, road. Agriculture
+# !!! 3) initial cluster
+# !!!      seed population, divide into houses, plant houses, and their mode of resource
+#  4) types of buildings, events: https://knightstemplar.co/from-taverns-to-towers-a-glimpse-into-medieval-city-constructs/
 #       residence: house, large farm house, townhouse, mannor
 #       authority: temple, town hall, constabulary, armory, guild houses
 #       specialization: tavern, theater (simple stage, amphetheater, enclosed theater), mill (water and wind),
@@ -40,8 +53,9 @@ path_factor = 8
 #       populations grows steadily, events drop it
 #       buildings grow with population along with them come specializations, events destroy buildings, other buildings
 # destroy buildings.
-#       roads built with cluster, new road made every time a building is built not adjacent to one. Use dextra algorithm
-# with harsh punishment for gradient. Roads are paved by proximity to important places (may not wory about paving)
+# !!!      roads built with cluster, new road made every time a building is built not adjacent to one. Use A* algorithm
+# !!! with harsh punishment for gradient.
+#   Roads are paved by proximity to important places (may not worry about paving)
 #
 
 
@@ -237,55 +251,55 @@ def graph_maker(graph, datain, structure, water):
         for yj in range(ylen-1):
             y = b+yj
             # need to set any paths as such in the graph
-            if structure[x][y] <= -1 :
-                if structure[x+1][y] <= -1:
+            if Building_Dict[structure[x][y]][0][1]<0:
+                if Building_Dict[structure[x+1][y]][0][1]:
                     graph.path_edgesLR[xi][yj] = True
-                if structure[x][y+1] <= -1:
+                if Building_Dict[structure[x][y+1]][0][1]<0:
                     graph.path_edgesDU[xi][yj] = True
-                if structure[x+1][y+1] <= -1:
+                if Building_Dict[structure[x+1][y+1]][0][1]<0:
                     graph.path_edges01[xi][yj] = True
-            if structure[x+1][y] <= -1 and structure[x][y+1] <= -1:
+            if Building_Dict[structure[x+1][y]][0][1] <0 and Building_Dict[structure[x][y+1]][0][1] < 0:
                 graph.path_edges10[xi][yj] = True
 
 
             # if either contain water and no bridge: if the water is deep - impassible, if shallow then cost 100
             # if there is a proper building (structure value>0) - impassible
-            if structure[x][y]>0 or (water[x][y] > 1 and structure[x][y]>=-1):
+            if Building_Dict[structure[x][y]][0][1]>0 or (water[x][y] > 1 and Building_Dict[structure[x][y]][0][1]>=-1):
                 graph.edgesLR[xi][yj] = max_v
                 graph.edgesDU[xi][yj] = max_v
                 graph.edges01[xi][yj] = max_v
             else:
-                if structure[x+1][y]>0 or (water[x + 1][y] > 1 and structure[x+1][y]>=-1):
+                if Building_Dict[structure[x+1][y]][0][1]>0>0 or (water[x + 1][y] > 1 and Building_Dict[structure[x+1][y]][0][1]>=-1):
                     graph.edgesLR[xi][yj] = max_v
-                elif (water[x + 1][y] > 0 and structure[x+1][y]>=-1) or (water[x][y] > 0  and structure[x][y]>=-1):
+                elif (water[x + 1][y] > 0 and Building_Dict[structure[x+1][y]][0][1]>=-1) or (water[x][y] > 0  and Building_Dict[structure[x][y]][0][1]>=-1):
                     graph.edgesLR[xi][yj] = 250
                     if graph.path_edgesLR[xi][yj]: graph.edgesLR[xi][yj] /= path_factor
                 else:
                     # no water or buildings: we measure height change 1+slope^2
                     graph.edgesLR[xi][yj] = (1 + np.abs(datain[x][y]-datain[x+1][y]) * aspect) ** h_val
                     if graph.path_edgesLR[xi][yj]: graph.edgesLR[xi][yj] /= path_factor
-                if structure[x][y+1]>0 or (water[x][y+1] > 1 and structure[x][y+1]>=-1):
+                if Building_Dict[structure[x][y+1]][0][1]>0 or (water[x][y+1] > 1 and structure[x][y+1]>=-1):
                     graph.edgesDU[xi][yj] = max_v
-                elif (water[x][y+1] > 0 and structure[x][y+1]>=-1) or (water[x][y] > 0  and structure[x][y]>=-1):
+                elif (water[x][y+1] > 0 and structure[x][y+1]>=-1) or (water[x][y] > 0  and Building_Dict[structure[x][y+1]][0][1]>=-1):
                     graph.edgesDU[xi][yj] = 250
                     if graph.path_edgesDU[xi][yj]: graph.edgesDU[xi][yj] /= path_factor
                 else:
                     # no water or buildings: we measure height change 1+slope^2
                     graph.edgesDU[xi][yj] = (1 + np.abs(datain[x][y] - datain[x][y+1]) * aspect) ** h_val
                     if graph.path_edgesDU[xi][yj]: graph.edgesDU[xi][yj] /= path_factor
-                if structure[x+1][y+1]>0 or (water[x+1][y+1] > 1 and structure[x+1][y+1]>=-1):
+                if Building_Dict[structure[x+1][y+1]][0][1]>0 or (water[x+1][y+1] > 1 and Building_Dict[structure[x+1][y+1]][0][1]>=-1):
                     graph.edges01[xi][yj] = max_v
-                elif (water[x+1][y+1] > 0 and structure[x+1][y+1]>=-1) or (water[x][y] > 0 and structure[x][y]>=-1):
+                elif (water[x+1][y+1] > 0 and Building_Dict[structure[x+1][y+1]][0][1]>=-1) or (water[x][y] > 0 and Building_Dict[structure[x][y]][0][1]>=-1):
                     graph.edges01[xi][yj] = 250
                     if graph.path_edges01[xi][yj]: graph.edges01[xi][yj] /= path_factor
                 else:
                     # no water or buildings: we measure height change 1+slope^2
                     graph.edges01[xi][yj] *= (1 + np.abs(datain[x][y] - datain[x+1][y+1]) * aspect) ** h_val
                     if graph.path_edges01[xi][yj]: graph.edges01[xi][yj] /= path_factor
-            if (structure[x][y+1]>0 or structure[x+1][y]>0 or
-                    (water[x][y+1] > 1 and structure[x][y+1]>=-1) or (water[x+1][y] > 1 and structure[x+1][y]>=-1)):
+            if (Building_Dict[structure[x][y+1]][0][1]>0 or Building_Dict[structure[x+1][y]][0][1]>0 or
+                    (water[x][y+1] > 1 and Building_Dict[structure[x][y+1]][0][1]>=-1) or (water[x+1][y] > 1 and Building_Dict[structure[x+1][y]][0][1]>=-1)):
                 graph.edges10[xi][yj] = max_v
-            elif (water[x][y+1] > 0 and structure[x][y+1]>=-1) or (water[x+1][y] > 0  and structure[x+1][y]>=-1):
+            elif (water[x][y+1] > 0 and Building_Dict[structure[x][y+1]][0][1]>=-1) or (water[x+1][y] > 0  and Building_Dict[structure[x+1][y]][0][1]>=-1):
                 graph.edges10[xi][yj] = 250
                 if graph.path_edges10[xi][yj]: graph.edges10[xi][yj] /= path_factor
             else:
@@ -298,14 +312,14 @@ def graph_maker(graph, datain, structure, water):
         y = b+ylen-1
 
         # again, need to update path flags.
-        if (structure[x][y] <= -1) and (structure[x+1][y] <= -1):
+        if (Building_Dict[structure[x][y]][0][1] <= -1) and (Building_Dict[structure[x+1][y]][0][1] <= -1):
             graph.path_edgesLR[xi][ylen-1] = True
 
-        if (structure[x][y] > 0 or structure[x+1][y]>0 or
-                (water[x][y] > 1 and structure[x][y] >= -1) or (water[x + 1][y] > 1 and structure[x+1][y]>=-1)):
+        if (Building_Dict[structure[x][y]][0][1] > 0 or Building_Dict[structure[x+1][y]][0][1]>0 or
+                (water[x][y] > 1 and Building_Dict[structure[x][y]][0][1] >= -1) or (water[x + 1][y] > 1 and Building_Dict[structure[x+1][y]][0][1]>=-1)):
             graph.edgesLR[xi][ylen-1] = max_v
 
-        elif water[x+1][y] > 0 and structure[x+1][y]>=-1:
+        elif water[x+1][y] > 0 and Building_Dict[structure[x+1][y]][0][1]>=-1:
             graph.edgesLR[xi][ylen-1] = 250
             if graph.path_edgesLR[xi][ylen - 1]: graph.edgesLR[xi][ylen - 1] /= path_factor
         else:
@@ -316,13 +330,13 @@ def graph_maker(graph, datain, structure, water):
         y = b + yj
 
         # again, need to update path flags.
-        if (structure[x][y] <= -1) and (structure[x][y+1] <= -1):
+        if (Building_Dict[structure[x][y]][0][1] <= -1) and (Building_Dict[structure[x][y+1]][0][1] <= -1):
             graph.path_edgesDU[xlen-1][yj] = True
 
-        if (structure[x][y] > 0 or structure[x][y+1] > 0 or
-                (water[x][y] > 1 and structure[x][y] >= -1) or (water[x][y+1] > 1 and structure[x][y+1] >= -1)):
-            graph.edgesDUR[xlen-1][yj] = max_v
-        elif water[x][y + 1] > 0 and structure[x][y + 1] >= -1:
+        if (Building_Dict[structure[x][y]][0][1] > 0 or Building_Dict[structure[x][y+1]][0][1] > 0 or
+                (water[x][y] > 1 and Building_Dict[structure[x][y]][0][1] >= -1) or (water[x][y+1] > 1 and Building_Dict[structure[x][y+1]][0][1] >= -1)):
+            graph.edgesDU[xlen-1][yj] = max_v
+        elif water[x][y + 1] > 0 and Building_Dict[structure[x][y+1]][0][1] >= -1:
             graph.edgesDU[xlen-1][yj] = 250
             if graph.path_edgesDU[xlen-1][yj]: graph.edgesDU[xlen-1][yj] /= path_factor
         else:
@@ -452,11 +466,75 @@ def settlement_eval(elev, slope, water, water_dist, tree, shrub, grass):
 
     return suitability_map
 
+
+# takes in coordinates, a struct map, and water map, and tells us if the given location is suitable for docks
+def validator_Docks(xlen, ylen, struct, water, x, y):
+    if water[x][y] > 0 and struct[x][y] == 0:
+        nbrs = handy_functions.get_valid_nbrs(xlen, ylen, x, y)
+        grnd = 0
+        wtr = 0
+        for (m, n) in nbrs:
+            if water[m][n] > 0:
+                wtr += 1
+            else:
+                grnd += 1
+        if grnd > 1 and wtr > 4: return True
+    return False
+
+
+# takes in the struct list, the center, number of tiles to place, max radius to check for, and a function
+# "validator" which takes in a coordinate and tells us if it's a suitable spot.
+# Function returns a list a places to place the buildings
+def building_placer(shape, center, no_tiles, max_tiles, validator):
+    xlen, ylen = shape
+    out = []
+    (a,b) = center
+    while no_tiles > 0:
+        k = 1
+        while k < max_tiles:
+            for i in range(-k, k + 1):
+                if a+i>=0 and a+i<xlen:
+                    if b-k>=0:
+                        if validator(a+i, b-k):
+                            out.append((a+i,b-k))
+                            k = max_tiles
+                            break
+                    if b+k<ylen:
+                        if validator(a + i, b + k):
+                            out.append((a + i, b + k))
+                            k = max_tiles
+                            break
+                if b + i >= 0 and b + i < ylen:
+                    if a-k >= 0:
+                        if validator(a - k, b + i):
+                            out.append((a - k, b + i))
+                            k = max_tiles
+                            break
+                    if a+k < xlen:
+                        if validator(a + k, b + i):
+                            out.append((a + k, b + i))
+                            k = max_tiles
+                            break
+            k += 1
+        no_tiles -= 1
+    return out
+
+
+# takes in a village class, the structure map, path graph, relevant info (datain, water, tree, shrub, grass) and simulates a
+# time_step, updating the village, structure map, and graph if needed.
+def village_time_step(village, struct, graph, datain, water, tree, shrub, grass):
+    # order: population, wealth growth, event occurance, determine needs and order, build up to available wealth
+    # how to determine needs? any buildings destroyed by events? over population?
+    #   trade specialization improvements
+    #   number of people -> public works, defence, professions, authority
+    return 1
+
+
 # takes in a settlement evaluation map and gives the desired number of seeds for villages
 # a seed contains: city center coords, population, # of houses, type (nucleated, linear, or dispersed),
 # 4 industry ratings (farming, herding, hunting, fishing), 2 corresponding type ratings (agriculture vs trade), and
 # starting radius.
-def settlement_seeds(settlement_map, water, slope, num):
+def settlement_seeds(settlement_map, datain, water, slope, num):
     # sum sett_map for each square, then divide by 4 * ( 2000 / unit_length)^2 then roll against that number to get proposed
     # seed. Then in order from the highest score to the lowest set those as the seeds and then halving the score of any seed
     # within 2000 ft of the current seed. If we run out of proposed seeds, do the process again, ensuring new additions are also
@@ -464,11 +542,12 @@ def settlement_seeds(settlement_map, water, slope, num):
 
     xlen = len(settlement_map)
     ylen = len(settlement_map[0])
+    shape = (xlen,ylen)
 
     rad_sq = (2000 / handy_functions.unit_length) ** 2
 
     # average of squares -> areas with one clear good industry are better than areas with a bit of everything
-    sumsett = np.sum(settlement_map * settlement_map, axis=2) / ((1000.0 / handy_functions.unit_length)**2)
+    sumsett = np.sum(settlement_map * settlement_map, axis=2) / ((500.0 / handy_functions.unit_length)**2)
     final_seeds = []
 
     seeds = []
@@ -559,6 +638,97 @@ def settlement_seeds(settlement_map, water, slope, num):
         villages.append(v)
 
 
+    # now we will initialise the structure map and draw paths between and within villages
+    struct = np.zeros((xlen, ylen))
+    for v in villages:
+        for b in v.building_list:
+            for (x, y) in b.location:
+                struct[x][y] = b.type
+
+    # Note to self: need to plant primary income structures right away
+    # farmland: find tiles with slope<0.15 within 500 ft of a river. 871200 sq ft * farming score -> rounded down
+    # docks: find closest water tile (to center) with a shore and 5 neigboring water tiles. If fishing is primary, find 2
+
+    for v in villages:
+        (a,b) = v.center
+        if v.A_T[0]>= v.A_T[1]:  # if agricultural, we generate farmland
+            no_tiles = 871200 * v.industries[0] // (handy_functions.unit_length ** 2)
+
+
+        else:  # if trade-based we create 0,1,or 2 docks
+            if v.industries[3]>v.industries[2]: no_tiles = 2
+            elif v.industries[3]> 0.1: no_tiles = 1
+            else: continue
+
+            # this will find a nearby suitable spot for a dock by going outward in concentric circles:
+            # Note to self: currently this runs the risk of going out of bounds - we either need to implement a check or
+            # require that village centers are close enough inside the boundaries that this isn't a problem. Also, the
+            # max radius of 20 is arbitrary and needs to be changed later.
+            docks = building_placer(shape, (a,b), no_tiles, 20, lambda i, j: validator_Docks(xlen, ylen, struct, water, i, j))
+            for (i, j) in docks:
+                struct[i][j] = 200  # Note to self, figure out what number id this should be
+                v.building_list.append(building(i, j, 200))
+            while False:#no_tiles>0:
+                k  = 1
+                while k<20:
+                    for i in range(-k,k+1):
+                        if water[a+i][b-k] > 0 and struct[a+i][b-k] == 0:
+                            nbrs = handy_functions.get_valid_nbrs(xlen,ylen,a+i,b-k)
+                            grnd = 0
+                            wtr = 0
+                            for (m,n) in nbrs:
+                                if water[m][n] > 0: wtr+=1
+                                else: grnd+= 1
+                            if grnd>1 and wtr>4:
+                                struct[a+i][b-k] = 200 # Note to self, figure out what number id this should be
+                                v.building_list.append(building(a+i,b-k, 200))
+                                k = 20
+                                break
+                        if water[a+i][b+k] > 0 and struct[a+i][b+k] == 0:
+                            nbrs = handy_functions.get_valid_nbrs(xlen, ylen, a + i, b + k)
+                            grnd = 0
+                            wtr = 0
+                            for (m, n) in nbrs:
+                                if water[m][n] > 0:
+                                    wtr += 1
+                                else:
+                                    grnd += 1
+                            if grnd > 1 and wtr > 4:
+                                struct[a + i][b + k] = 200  # Note to self, figure out what number id this should be
+                                v.building_list.append(building(a + i, b + k, 200))
+                                k = 20
+                                break
+                        if water[a-k][b+i] > 0 and struct[a-k][b+i] == 0:
+                            nbrs = handy_functions.get_valid_nbrs(xlen, ylen, a - k, b + i)
+                            grnd = 0
+                            wtr = 0
+                            for (m, n) in nbrs:
+                                if water[m][n] > 0:
+                                    wtr += 1
+                                else:
+                                    grnd += 1
+                            if grnd > 1 and wtr > 4:
+                                struct[a - k][b + i] = 200  # Note to self, figure out what number id this should be
+                                v.building_list.append(building(a - k, b + i, 200))
+                                k = 20
+                                break
+                        if water[a+k][b+i] > 0 and struct[a+k][b+i] == 0:
+                            nbrs = handy_functions.get_valid_nbrs(xlen, ylen, a + k, b + i)
+                            grnd = 0
+                            wtr = 0
+                            for (m, n) in nbrs:
+                                if water[m][n] > 0:
+                                    wtr += 1
+                                else:
+                                    grnd += 1
+                            if grnd > 1 and wtr > 4:
+                                struct[a + k][b + i] = 200  # Note to self, figure out what number id this should be
+                                v.building_list.append(building(a + k, b + i, 200))
+                                k = 20
+                                break
+                    k+=1
+                no_tiles -= 1
+
     # TEMPORARY
     temp = False
     if temp:
@@ -579,7 +749,49 @@ def settlement_seeds(settlement_map, water, slope, num):
                 for (a,b) in b.location:
                     settlement_map[a][b] = col
 
-    return villages
+    g = travel_graph(xlen, ylen, (0, 0))
+    graph_maker(g, datain, struct, water)
+
+    # within each village, connect all houses and structures to meeting square
+    for v in villages:
+        (v1,v2) = v.center
+        for b in v.building_list:
+            if b.type < 400:
+                (x,y) = b.location[0]
+                val, dir = path_maker(g, datain, x, y, v1, v2)
+                print("got there at ", val)
+                g.update_path(dir)
+                for (a,b) in dir:
+                    if struct[a][b] == 0: struct[a][b] = -1
+
+    print("inner paths done")
+
+    # Note to self: there is probably a better way to do this considering the fact that the number of villages is small
+    # ideally we would do something like v1~v2, v1~v3, v2~v3, v1~v4, v2~v4, v3~v4, ...
+    for i in range(len(villages)):
+        (v1, v2) = villages[i].center
+        for j in range(i+1, len(villages)):
+            (v3,v4) = villages[j].center
+            if np.sqrt((v1-v3)**2 + (v2-v4)**2) < 10000 / handy_functions.unit_length:
+                val, dir = path_maker(g, datain, v1, v2, v3, v4)
+                print("got there at ", val)
+                g.update_path(dir)
+                for (a, b) in dir:
+                    if struct[a][b] == 0: struct[a][b] = -1
+
+    print("outer paths done")
+
+
+    return villages, struct, g  # returns the list of village seeds, the structure map, and the path graph
+
+
+# a tool that takes in a struct and water map, along with a base image, and paints on it the water and structures
+def struct_painter(img, struct, water):
+    for x in range(len(struct)):
+        for y in range(len(struct[0])):
+            if struct[x][y] != 0:
+                img[x][y] = Building_Dict[struct[x][y]][0][2]
+            elif water[x][y] > 0: img[x][y] = (0, 0, 1)
 
 # a temporary testing function for path-finding
 def path_tester(len_in):
@@ -628,66 +840,22 @@ def path_tester(len_in):
 # a temporary testing function for building paths in and between villages
 def village_path_tester(len_in):
     datain = dataGen.get_sample_unnormed(len_in)  # handy_functions.erode_Semi(handy_functions.genSample(256,256),10)
-    s = water_gen.spring(datain, 1 / (256 * 256), len_in, len_in)
+    s = water_gen.spring(datain, 24 / (256 * 256), len_in, len_in)
     datain2 = np.copy(datain)
-    water = water_gen.draw_water_erode2(datain2, s, 14)
+    water = water_gen.draw_water_erode2(datain2, s, 24)
 
     veg, tree, shrub, grass, slope, water_dist = veg_gen.gen_veg(datain2, water)
 
     set_map = settlement_eval(datain2, slope, water, water_dist, tree, shrub, grass)
 
-    final_seeds = settlement_seeds(set_map, water, slope, 6)
+    final_seeds, struct, g = settlement_seeds(set_map, datain2, water, slope, 5)
 
-    # using the villages, create structure map
-    struct = np.zeros((len_in, len_in))
     for v in final_seeds:
-        for b in v.building_list:
-            for (x,y) in b.location:
-                if b.type >= 400:
-                    struct[x][y] = -b.type
-                else:
-                    struct[x][y] = b.type
-
-    g = travel_graph(len_in, len_in, (0, 0))
-    graph_maker(g, datain2, struct, water)
-
-    showim = handy_functions.hillshade(datain2, 0, 30)
+        print(v)
+    showim = handy_functions.hillshade(datain2, 100, 30)
     showim3 = np.dstack((showim, showim, showim))
 
-    # within each village, connect all houses to meeting square
-    for v in final_seeds:
-        (v1,v2) = v.center
-        for b in v.building_list:
-            if b.type == 1:
-                (x,y) = b.location[0]
-                val, dir = path_maker(g, datain, x, y, v1, v2)
-                print("got there at ", val)
-                g.update_path(dir)
-                for (a,b) in dir:
-                    if struct[a][b] == 0: struct[a][b] = -1
-
-    print("inner paths done")
-
-    for i in range(len(final_seeds)):
-        (v1, v2) = final_seeds[i].center
-        for j in range(i+1,len(final_seeds)):
-            (v3,v4) = final_seeds[j].center
-            if np.sqrt((v1-v3)**2 + (v2-v4)**2) < 10000 / handy_functions.unit_length:
-                val, dir = path_maker(g, datain, v1, v2, v3, v4)
-                print("got there at ", val)
-                g.update_path(dir)
-                for (a, b) in dir:
-                    if struct[a][b] == 0: struct[a][b] = -1
-
-    print("outer paths done")
-
-    for x in range(len_in):
-        for y in range(len_in):
-            if water[x][y] > 0: showim3[x][y] = [0, 0, 1]
-            elif struct[x][y] != 0:
-                if struct[x][y] == -1: showim3[x][y] = [0.92, 0.67, 0.31]
-                elif struct[x][y] == 1: showim3[x][y] = [.7,.7,1]
-                else: showim3[x][y] = [.7,1,.8]
+    struct_painter(showim3, struct, water)
 
     plt.imshow(showim3)
     plt.show()
