@@ -1,7 +1,5 @@
 import numpy as np
 from tqdm import tqdm
-import matplotlib.cm as mat1
-import matplotlib.colors as mat2
 import matplotlib.pyplot as plt
 import handy_functions
 import water_gen
@@ -12,7 +10,7 @@ import bisect
 aspect = handy_functions.unit_height / handy_functions.unit_length
 h_val = 32
 path_factor = 8
-TIME_STEP = 10 #years
+TIME_STEP = 10  # years
 
 Building_Dict = {}
 # id, [name, path-like, color]
@@ -21,7 +19,7 @@ L = [[0, ("Empty",0,(0,0,0))],
      [400, ("Meeting Spot", -1, (.7,1,.8))], [401, ("Bell", -1, (.7, 1, .8 ))], [402, ("Meeting Square", -1, (.7, 1, .8 ))],
      [403, ("Meeting House", 1, (.7, 1, 1))], [404, ("Amphitheater", -1, (.7, 1, .8 ))],
      [410, ("Well", 1, (.2,.2,1))],
-     [200, ("Dock", -2, (0.82, 0.77, 0.15))]]
+     [200, ("Dock", -2, (0.82, 0.77, 0.15))], [201, ("Farm", 0, (0.76, .9, 0.34))]]
 for i in range(len(L)):
     Building_Dict[L[i][0]] = []
     Building_Dict[L[i][0]].append(L[i][1])
@@ -48,7 +46,7 @@ for i in range(len(L)):
 #       public works: well, library, market square, fountain, hospital/almshouse, bridge, ferry
 #       defence: walls (wood, stone, sizes), mound, tower, gate, moat
 #
-#     events: plague, famine, drought, flood, fire, harsh winter, strong storms, rain, invation, occupation,
+#     events: plague, famine, drought, flood, fire, harsh winter, strong storms, rain, invation, occupation, riot
 # 5) growth, building, road, population
 #       populations grows steadily, events drop it
 #       buildings grow with population along with them come specializations, events destroy buildings, other buildings
@@ -71,11 +69,14 @@ class village_seed():
         self.roads_list = []
         self.type = 1 # 3 is dispersed
         self.industries = [0,0,0,0]  # farming, herding, game, fishing
+        self.investment = [0,0,0,0]
         self.A_T = [0,0]  # Agriculture and Trade
+        self.W = 0  # bonus for wealth
 
     def __str__(self):
         p = ((str(self.center) + " " + str(self.radius) + " Type: "+ str(self.type) +'\n[Population = ' +
               str(self.population) + ", Wealth: " + str(self.wealth) + "]\n") + str(self.A_T) + str(self.industries) +
+              "Invested: " + str(self.investment) +
              "\n Families: " + str(len(self.families_list))) + ", Buildings: " + str(len(self.building_list))
         return p
 
@@ -345,7 +346,7 @@ def graph_maker(graph, datain, structure, water):
     return
 
 
-def settlement_eval(elev, slope, water, water_dist, tree, shrub, grass):
+def settlement_eval(elev, slope, water, water_dist, veg, grass):
     xlen = len(elev)
     ylen = len(elev[0])
 
@@ -355,6 +356,8 @@ def settlement_eval(elev, slope, water, water_dist, tree, shrub, grass):
     water_factor = np.zeros((xlen,ylen,1))
     slope_factor = np.zeros((xlen,ylen,1))
     fish = np.zeros((xlen,ylen))
+    fish_indicator = np.zeros((xlen,ylen))
+
 
     building_sphere = handy_functions.create_sphere(building_radius)
     print("evaluating settlement factors")
@@ -404,19 +407,20 @@ def settlement_eval(elev, slope, water, water_dist, tree, shrub, grass):
             if w==0:
                 water_factor[x][y] = [0.0]
                 fish[x][y] = 1.0
+                fish_indicator[x][y] = 1
                 ww = water[x][y]
                 for t in fish_thresh:
                     if ww>=t:
                         break
                     else:
-                        fish[x][y]/=2
+                        fish[x][y]/= 1.25
             else:
                 water_factor[x][y] = [1.0]
                 for t in water_thresh:
                     if w<t:
                         break
                     else:
-                        water_factor[x][y] /= 1.35
+                        water_factor[x][y] /= 1.1
             if s>slope_thresh[3]:
                 slope_factor[x][y] = [0.0]
             else:
@@ -433,11 +437,14 @@ def settlement_eval(elev, slope, water, water_dist, tree, shrub, grass):
 
     stack = []
     stackMain = []
-    grand_array = np.dstack((grass,shrub,tree,fish))
+    stackMain2 = []
+    grand_array = np.dstack((grass,veg[:,:,2],veg[:,:,1],fish, fish_indicator))
 
-    cnt_Max = 2**26 // (xlen*ylen) # a safe memory limit for my device, after which we need to sum the stack
+    cnt_Max = 2**26 // (xlen*ylen)  # a safe memory limit for my device, after which we need to sum the stack
     cnt = 0
+    cnt2 = 0
     broken = 0
+    broken2 = 0
     for (i,j) in tqdm(sphere):
         if i>0:
             if j>0:
@@ -456,15 +463,26 @@ def settlement_eval(elev, slope, water, water_dist, tree, shrub, grass):
             broken += 1
             print("stack broken", broken)
             cnt=0
-    if stack: stackMain.append(np.sum(stack, axis = 0))
-    suitability_map = np.sum(stackMain, axis = 0)
-    suitability_map[:,:,3] *= np.sqrt(suitability_map[:,:,3])
-    suitability_map[:, :, 2] = np.power(suitability_map[:, :, 2], 7/8)
-    suitability_map[:, :, 1] /= 2 #np.sqrt(suitability_map[:, :, 1]) * sphere_radius
-    suitability_map[:, :, 0] *= 1.25 # np.sqrt(suitability_map[:, :, 0]) * sphere_radius
-    suitability_map *= water_factor * slope_factor / len(sphere)
+            cnt2+=1
+            if cnt2>cnt_Max:
+                stackMain2.append(np.sum(stackMain, axis=0))
+                stackMain = []
+                broken2 += 1
+                print("BIG stack broken", broken2)
+                cnt2 = 0
 
-    return suitability_map
+    if stack: stackMain.append(np.sum(stack, axis = 0))
+    if stackMain: stackMain2.append(np.sum(stackMain, axis = 0))
+    suitability_map = np.sum(stackMain2, axis = 0)
+
+    suitability_map[:,:,4] = np.power(suitability_map[:, :, 4], 7/8)
+    suitability_map[:, :, 3] = np.power(len(sphere), 7/8) * np.divide(suitability_map[:,:,3], suitability_map[:,:,4], out=np.zeros_like(suitability_map[:,:,3]), where=suitability_map[:,:,4]!=0)
+    #suitability_map[:, :, 2] = np.power(len(sphere), 1/2) * np.power(suitability_map[:, :, 2], 1/2)
+    #suitability_map[:, :, 1] = np.power(len(sphere), 1/2) * np.power(suitability_map[:, :, 1], 1/2)  # np.sqrt(suitability_map[:, :, 1]) * sphere_radius
+    #suitability_map[:, :, 0] *= 1.25  # np.sqrt(suitability_map[:, :, 0]) * sphere_radius
+    suitability_map *= slope_factor * water_factor / len(sphere)  #
+
+    return suitability_map[:,:,0:4]
 
 
 # takes in coordinates, a struct map, and water map, and tells us if the given location is suitable for docks
@@ -478,8 +496,33 @@ def validator_Docks(xlen, ylen, struct, water, x, y):
                 wtr += 1
             else:
                 grnd += 1
-        if grnd > 1 and wtr > 4: return True
+        if grnd > 1 and wtr > 4:
+            struct[x][y] = 200
+            return True
     return False
+
+
+# takes in struct, water, water_distance, slope, and coords, and validates farmland spots
+# (either close to water or shallow slope)
+def validator_Farm(xlen, ylen, struct, water, water_dist, slope, x, y):
+    if (struct[x][y] != 0 or water[x][y] > 0 or slope[x][y] > 0.35 or
+            (slope[x][y] > 0.175 and water_dist[x][y] >= handy_functions.water_max - 100)):
+        return False
+    else:
+        nbrs = handy_functions.get_valid_nbrs(xlen, ylen, x,y)
+        # here we ensure it has a neighboring structure and also roll with 5% chance of success
+        for (i,j) in nbrs:
+            if struct[i][j] > 0:
+                if np.random.random() < .05 * (1 + (1.0 - (water_dist[x][y] / (handy_functions.water_max ** 2)) ** 2)):
+                    struct[x][y] = 201
+                    return True
+        return False
+
+
+# validates a valid bridge spot by checking if the spot has a path (via graph), no other structures, and has water.
+# also want a straight line.
+def validator_Bridge(xlen, ylen, struct, water, graph, x, y):
+    return 1
 
 
 # takes in the struct list, the center, number of tiles to place, max radius to check for, and a function
@@ -520,13 +563,36 @@ def building_placer(shape, center, no_tiles, max_tiles, validator):
     return out
 
 
-# takes in a village class, the structure map, path graph, relevant info (datain, water, tree, shrub, grass) and simulates a
-# time_step, updating the village, structure map, and graph if needed.
-def village_time_step(village, struct, graph, datain, water, tree, shrub, grass):
+# takes in a village class, the structure map, path graph, relevant info (datain, water, tree, shrub, grass) and
+# simulates a time_step, updating the village, structure map, and graph if needed.
+def village_time_step(village, struct, graph, datain, water, grass, tree, shrub):
     # order: population, wealth growth, event occurance, determine needs and order, build up to available wealth
     # how to determine needs? any buildings destroyed by events? over population?
     #   trade specialization improvements
     #   number of people -> public works, defence, professions, authority
+
+    # idea: in the end, create investment, copy of industries and normalize (after process round down to .001)
+    # population:   if Agricultural:    P_prev * (.85 + F*iF + H*iH + (G*iG + S*iS)/3)
+    #    (TBD)      if Trade:           P_prev * (.85 + (F*iF + H*iH)/3 + G*iG + (S*iS)/2)
+    # wealth:       if Agricultural:    P_prev * (.85 + (F*iF)/2 + H*iH + (G*iG + S*iS)/3 + W)
+    #               if Trade:           P_prev * (.85 + (F*iF + H*iH)/2 + G*iG + S*iS + W)
+    # event: create list of events and their probabilities (may be dependant on setlmnt factors).
+    #           Roll for each individually, so you can get none, one, or more. After each update village and possibly
+    #           event chart.
+    # building: can alter investment percentages, flat industry rates, or wealth bonus W. Can also change event chart.
+    # (defence buildings prevent attacks, public works can prevent desiese - such as wells or alms houses, authority
+    # buildings prevent disorder/riots.)
+    inv = village.investment
+    ind = village.industries
+    agr = village.A_T[0] >= village.A_T[1]
+
+    if agr:
+        p_new = village.population * (.85 + ind[0]*inv[0] + ind[1]*inv[1] + (ind[2]*inv[2] + ind[3]*inv[3])/3)
+        w_new = village.wealth * (.85 + ind[0]*inv[0]/2 + ind[1]*inv[1] + (ind[2]*inv[2] + ind[3]*inv[3])/3 + village.W)
+    else:
+        p_new = village.population * (.85 + (ind[0]*inv[0] + ind[1]*inv[1])/3 + ind[2]*inv[2] + ind[3]*inv[3]/2)
+        w_new = village.wealth * (.85 + (ind[0]*inv[0] + ind[1]*inv[1])/2 + ind[2]*inv[2] + ind[3]*inv[3] + village.W)
+
     return 1
 
 
@@ -534,7 +600,7 @@ def village_time_step(village, struct, graph, datain, water, tree, shrub, grass)
 # a seed contains: city center coords, population, # of houses, type (nucleated, linear, or dispersed),
 # 4 industry ratings (farming, herding, hunting, fishing), 2 corresponding type ratings (agriculture vs trade), and
 # starting radius.
-def settlement_seeds(settlement_map, datain, water, slope, num):
+def settlement_seeds(settlement_map, datain, water, water_dist, slope, num):
     # sum sett_map for each square, then divide by 4 * ( 2000 / unit_length)^2 then roll against that number to get proposed
     # seed. Then in order from the highest score to the lowest set those as the seeds and then halving the score of any seed
     # within 2000 ft of the current seed. If we run out of proposed seeds, do the process again, ensuring new additions are also
@@ -544,8 +610,9 @@ def settlement_seeds(settlement_map, datain, water, slope, num):
     ylen = len(settlement_map[0])
     shape = (xlen,ylen)
 
-    rad_sq = (2000 / handy_functions.unit_length) ** 2
-
+    rad = 2000 // handy_functions.unit_length
+    rad_index = handy_functions.create_sphere(rad)
+    rad_sq = (rad) ** 2
     # average of squares -> areas with one clear good industry are better than areas with a bit of everything
     sumsett = np.sum(settlement_map * settlement_map, axis=2) / ((500.0 / handy_functions.unit_length)**2)
     final_seeds = []
@@ -556,11 +623,17 @@ def settlement_seeds(settlement_map, datain, water, slope, num):
             seeds.sort()
             (ka,xa,ya) = seeds.pop()
 
-            final_seeds.append((ka,xa,ya) )
+            final_seeds.append((ka,xa,ya))
+            # make sure nearby points have their values quartered.
+            for (i,j) in rad_index:
+                xi = xa + i
+                if xi>=0 and xi<xlen:
+                    yj = ya + j
+                    if yj>=0 and yj<ylen:
+                        sumsett[xi][yj] /= 4
+
             for i in range(len(seeds)):
                 (k,x,y) = seeds[i]
-                # Note to self: this could be more dynamic. Maybe too close = bad,
-                # but close enough is good (being near other villages)
                 dist_sq = (x-xa)**2 + (y-ya)**2
                 if dist_sq < rad_sq:
                     seeds[i] = (k/4,x,y)
@@ -619,8 +692,6 @@ def settlement_seeds(settlement_map, datain, water, slope, num):
                 if t==0: break
             buildings.append(building(bx,by,1))
 
-        # Note to self: implement road-building here
-
         budget = v.wealth - v.spent
         if budget>=6:
             buildings[0].type = 404  # Amphitheatre
@@ -637,7 +708,6 @@ def settlement_seeds(settlement_map, datain, water, slope, num):
         v.building_list = buildings
         villages.append(v)
 
-
     # now we will initialise the structure map and draw paths between and within villages
     struct = np.zeros((xlen, ylen))
     for v in villages:
@@ -645,15 +715,17 @@ def settlement_seeds(settlement_map, datain, water, slope, num):
             for (x, y) in b.location:
                 struct[x][y] = b.type
 
-    # Note to self: need to plant primary income structures right away
-    # farmland: find tiles with slope<0.15 within 500 ft of a river. 871200 sq ft * farming score -> rounded down
-    # docks: find closest water tile (to center) with a shore and 5 neigboring water tiles. If fishing is primary, find 2
-
     for v in villages:
         (a,b) = v.center
         if v.A_T[0]>= v.A_T[1]:  # if agricultural, we generate farmland
-            no_tiles = 871200 * v.industries[0] // (handy_functions.unit_length ** 2)
-
+            for house in range(1,6):
+                (m, n) = v.building_list[house].location[0]
+                no_tiles = 348480 * settlement_map[m][n][0] // (handy_functions.unit_length ** 2)
+                farms = building_placer(shape, (m,n), no_tiles, 60,
+                                        lambda i, j: validator_Farm(xlen, ylen, struct, water, water_dist, slope, i ,j))
+                for (i, j) in farms:
+                    struct[i][j] = 201  # Note to self, figure out what number id this should be
+                    v.building_list.append(building(i, j, 201))
 
         else:  # if trade-based we create 0,1,or 2 docks
             if v.industries[3]>v.industries[2]: no_tiles = 2
@@ -661,73 +733,11 @@ def settlement_seeds(settlement_map, datain, water, slope, num):
             else: continue
 
             # this will find a nearby suitable spot for a dock by going outward in concentric circles:
-            # Note to self: currently this runs the risk of going out of bounds - we either need to implement a check or
-            # require that village centers are close enough inside the boundaries that this isn't a problem. Also, the
-            # max radius of 20 is arbitrary and needs to be changed later.
+            # Note to self:  The max radius of 20 is arbitrary and needs to be changed later.
             docks = building_placer(shape, (a,b), no_tiles, 20, lambda i, j: validator_Docks(xlen, ylen, struct, water, i, j))
             for (i, j) in docks:
                 struct[i][j] = 200  # Note to self, figure out what number id this should be
                 v.building_list.append(building(i, j, 200))
-            while False:#no_tiles>0:
-                k  = 1
-                while k<20:
-                    for i in range(-k,k+1):
-                        if water[a+i][b-k] > 0 and struct[a+i][b-k] == 0:
-                            nbrs = handy_functions.get_valid_nbrs(xlen,ylen,a+i,b-k)
-                            grnd = 0
-                            wtr = 0
-                            for (m,n) in nbrs:
-                                if water[m][n] > 0: wtr+=1
-                                else: grnd+= 1
-                            if grnd>1 and wtr>4:
-                                struct[a+i][b-k] = 200 # Note to self, figure out what number id this should be
-                                v.building_list.append(building(a+i,b-k, 200))
-                                k = 20
-                                break
-                        if water[a+i][b+k] > 0 and struct[a+i][b+k] == 0:
-                            nbrs = handy_functions.get_valid_nbrs(xlen, ylen, a + i, b + k)
-                            grnd = 0
-                            wtr = 0
-                            for (m, n) in nbrs:
-                                if water[m][n] > 0:
-                                    wtr += 1
-                                else:
-                                    grnd += 1
-                            if grnd > 1 and wtr > 4:
-                                struct[a + i][b + k] = 200  # Note to self, figure out what number id this should be
-                                v.building_list.append(building(a + i, b + k, 200))
-                                k = 20
-                                break
-                        if water[a-k][b+i] > 0 and struct[a-k][b+i] == 0:
-                            nbrs = handy_functions.get_valid_nbrs(xlen, ylen, a - k, b + i)
-                            grnd = 0
-                            wtr = 0
-                            for (m, n) in nbrs:
-                                if water[m][n] > 0:
-                                    wtr += 1
-                                else:
-                                    grnd += 1
-                            if grnd > 1 and wtr > 4:
-                                struct[a - k][b + i] = 200  # Note to self, figure out what number id this should be
-                                v.building_list.append(building(a - k, b + i, 200))
-                                k = 20
-                                break
-                        if water[a+k][b+i] > 0 and struct[a+k][b+i] == 0:
-                            nbrs = handy_functions.get_valid_nbrs(xlen, ylen, a + k, b + i)
-                            grnd = 0
-                            wtr = 0
-                            for (m, n) in nbrs:
-                                if water[m][n] > 0:
-                                    wtr += 1
-                                else:
-                                    grnd += 1
-                            if grnd > 1 and wtr > 4:
-                                struct[a + k][b + i] = 200  # Note to self, figure out what number id this should be
-                                v.building_list.append(building(a + k, b + i, 200))
-                                k = 20
-                                break
-                    k+=1
-                no_tiles -= 1
 
     # TEMPORARY
     temp = False
@@ -756,7 +766,7 @@ def settlement_seeds(settlement_map, datain, water, slope, num):
     for v in villages:
         (v1,v2) = v.center
         for b in v.building_list:
-            if b.type < 400:
+            if b.type < 400 and b.type != 201:  # Note to self: need a better system for excluding path-making
                 (x,y) = b.location[0]
                 val, dir = path_maker(g, datain, x, y, v1, v2)
                 print("got there at ", val)
@@ -781,6 +791,11 @@ def settlement_seeds(settlement_map, datain, water, slope, num):
 
     print("outer paths done")
 
+    # at the very end, initialize the investment to be the normed industry array
+    for v in villages:
+        s = sum(v.industries)
+        if s!=0:
+            v.investment = np.round(np.divide(v.industries, s), decimals=3)
 
     return villages, struct, g  # returns the list of village seeds, the structure map, and the path graph
 
@@ -840,19 +855,19 @@ def path_tester(len_in):
 # a temporary testing function for building paths in and between villages
 def village_path_tester(len_in):
     datain = dataGen.get_sample_unnormed(len_in)  # handy_functions.erode_Semi(handy_functions.genSample(256,256),10)
-    s = water_gen.spring(datain, 24 / (256 * 256), len_in, len_in)
+    s = water_gen.spring(datain, 0 / (256 * 256), len_in, len_in)
     datain2 = np.copy(datain)
-    water = water_gen.draw_water_erode2(datain2, s, 24)
+    water = water_gen.draw_water_erode2(datain2, s, 14)
 
     veg, tree, shrub, grass, slope, water_dist = veg_gen.gen_veg(datain2, water)
 
-    set_map = settlement_eval(datain2, slope, water, water_dist, tree, shrub, grass)
+    set_map = settlement_eval(datain2, slope, water, water_dist, veg, grass)
 
-    final_seeds, struct, g = settlement_seeds(set_map, datain2, water, slope, 5)
+    final_seeds, struct, g = settlement_seeds(set_map, datain2, water, water_dist, slope, 10)
 
     for v in final_seeds:
         print(v)
-    showim = handy_functions.hillshade(datain2, 100, 30)
+    showim = handy_functions.hillshade(datain2, 0, 30)
     showim3 = np.dstack((showim, showim, showim))
 
     struct_painter(showim3, struct, water)
@@ -861,24 +876,24 @@ def village_path_tester(len_in):
     plt.show()
 
 
-village_path_tester(512)
+#village_path_tester(512)
 
-if False:
-    len_in = 2048
+if True:
+    len_in = 512
     datain = dataGen.get_sample_unnormed(len_in)  # handy_functions.erode_Semi(handy_functions.genSample(256,256),10)
 
-    s = water_gen.spring(datain, 1 / (256 * 256), len_in, len_in)
+    s = water_gen.spring(datain, 10 / (256 * 256), len_in, len_in)
     datain2 = np.copy(datain)
     water = water_gen.draw_water_erode2(datain2, s, 14)
 
     veg, tree, shrub, grass, slope, water_dist = veg_gen.gen_veg(datain2, water)
 
-    set_map = settlement_eval(datain2, slope, water, water_dist, tree, shrub, grass)
+    set_map = settlement_eval(datain2, slope, water, water_dist, veg, grass)
 
-    final_seeds = settlement_seeds(set_map, water, slope, 6)
+    #final_seeds = settlement_seeds(set_map, water, slope, 6)
 
-    for v in final_seeds:
-        print(v)
+    #for v in final_seeds:
+    #    print(v)
 
     plt.imshow(slope, cmap='Greys')
     plt.show()

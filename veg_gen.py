@@ -14,6 +14,7 @@ water_max = handy_functions.water_max // unit_length # tiles
 # Note to self: this can be improved by making it one function. And calculating slope via np.gradient
 # can speed up water_distance.
 
+
 # given input elev data and water data, returns data needed for vegitation generation
 def create_data(datain,water):
 
@@ -48,6 +49,7 @@ def create_data(datain,water):
     slope = np.arctan(np.sqrt(dx * dx + dy * dy))
 
     return slope, dataout2
+
 
 # creates a fertility map triplet (tree, shrub, grass)
 # trees suffer quadratically more from slope
@@ -90,18 +92,19 @@ def create_fertility(datain,water):
             f_grass[x][y] = sG * wG**3
     return (f_tree, f_shrub, f_grass, slope_data, water_data)
 
+
 # randomly generates vegetation
 def gen_veg(datain,water):
-
+    # Note to self: consider generating batches of batches
     # parameter controlling how frequently batches appear. The higher, the less frequent
-    gen_param_tree = 300
-    gen_param_shrub = 250
+    gen_param_tree = 1200
+    gen_param_shrub = 1000
     gen_param_grass = 25
     # parameters controlling how many per batch and how much they disperse
-    tree_disperse = 40
-    tree_num = .01
-    shrub_disperse = 20
-    shrub_num = .05
+    tree_disperse = 80
+    tree_num = .04
+    shrub_disperse = 40
+    shrub_num = .2
     grass_disperse = 30
     grass_num = .1
 
