@@ -9,7 +9,7 @@ import dataGen
 
 unit_height = handy_functions.unit_height  # feet
 unit_length = handy_functions.unit_length  # feet
-water_max = handy_functions.water_max // unit_length # tiles
+water_max = handy_functions.water_max // unit_length  # tiles
 
 # Note to self: this can be improved by making it one function. And calculating slope via np.gradient
 # can speed up water_distance.

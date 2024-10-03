@@ -66,6 +66,7 @@ class village_seed():
         self.spent = 0
         self.building_list = []
         self.families_list = []
+        self.priority_list = [(1,5,0)]  # blding_id, cost, invested
         self.roads_list = []
         self.type = 1 # 3 is dispersed
         self.industries = [0,0,0,0]  # farming, herding, game, fishing
@@ -485,6 +486,21 @@ def settlement_eval(elev, slope, water, water_dist, veg, grass):
     return suitability_map[:,:,0:4]
 
 
+# Houses should be built next to paths, but not on them.
+def validator_House(xlen, ylen, struct, water, slope, x, y):
+    if struct[x][y] != 0 or water[x][y] > 0 or slope[x][y]>0.68: return False
+    else:
+        nbrs = handy_functions.get_valid_nbrs(xlen, ylen, x, y)
+        for (i, j) in nbrs:
+            if struct[i][j] == -1: return True
+    return False
+
+
+# If we can't find a suitable place that's next to a path, we find one anywhere.
+def validator_House_Path(struct, water, slope, x, y):
+    if struct[x][y] > 0 or water[x][y] > 0 or slope[x][y] > 0.68: return False
+    return True
+
 # takes in coordinates, a struct map, and water map, and tells us if the given location is suitable for docks
 def validator_Docks(xlen, ylen, struct, water, x, y):
     if water[x][y] > 0 and struct[x][y] == 0:
@@ -505,7 +521,7 @@ def validator_Docks(xlen, ylen, struct, water, x, y):
 # takes in struct, water, water_distance, slope, and coords, and validates farmland spots
 # (either close to water or shallow slope)
 def validator_Farm(xlen, ylen, struct, water, water_dist, slope, x, y):
-    if (struct[x][y] != 0 or water[x][y] > 0 or slope[x][y] > 0.35 or
+    if (struct[x][y] > 0 or water[x][y] > 0 or slope[x][y] > 0.35 or
             (slope[x][y] > 0.175 and water_dist[x][y] >= handy_functions.water_max - 100)):
         return False
     else:
@@ -592,6 +608,16 @@ def village_time_step(village, struct, graph, datain, water, grass, tree, shrub)
     else:
         p_new = village.population * (.85 + (ind[0]*inv[0] + ind[1]*inv[1])/3 + ind[2]*inv[2] + ind[3]*inv[3]/2)
         w_new = village.wealth * (.85 + (ind[0]*inv[0] + ind[1]*inv[1])/2 + ind[2]*inv[2] + ind[3]*inv[3] + village.W)
+
+    # Do events
+
+    # make priority list (huge bonus to already invested buildings)
+
+    # temp priority list. Desired houses
+
+
+    # while spent + 5 <=wealth:
+    # go to next on priority list and invest to build it. If finished place the building,
 
     return 1
 
@@ -877,8 +903,9 @@ def village_path_tester(len_in):
 
 
 #village_path_tester(512)
-
-if True:
+loader = True
+rig = True
+if rig and not loader:
     len_in = 512
     datain = dataGen.get_sample_unnormed(len_in)  # handy_functions.erode_Semi(handy_functions.genSample(256,256),10)
 
@@ -890,10 +917,45 @@ if True:
 
     set_map = settlement_eval(datain2, slope, water, water_dist, veg, grass)
 
-    #final_seeds = settlement_seeds(set_map, water, slope, 6)
+    final_seeds, struct, graph = settlement_seeds(set_map, datain2, water, water_dist, slope, 6)
 
     #for v in final_seeds:
     #    print(v)
+
+    plt.imshow(slope, cmap='Greys')
+    plt.show()
+
+    dataGen.save_ALL(datain2, water, water_dist, slope, veg, grass, shrub, tree, set_map, struct, final_seeds, graph)
+
+    plt.imshow(np.sqrt(water_dist), cmap='Oranges')
+    plt.show()
+
+    plt.imshow(np.concatenate((tree, shrub, grass), axis=1), cmap='Greens')
+    plt.show()
+
+    # second_row = np.concatenate((veg, np.subtract(veg,water*10)), axis = 1)
+    plt.imshow(water, cmap='gist_earth')  # np.concatenate((first_row, second_row), axis =0),cmap='gist_earth')
+    plt.show()
+
+    plt.imshow(veg)  # cmap='Dark2_r')
+    plt.show()
+
+    plt.imshow(np.delete(set_map, 1, 2))  # cmap='Dark2_r')
+    plt.show()
+
+    plt.imshow(np.delete(set_map, 3, 2))  # cmap='Dark2_r')
+    plt.show()
+
+    showim = handy_functions.hillshade(datain2, 0, 30)
+    showim3 = np.dstack((showim, showim, showim))
+
+    struct_painter(showim3, struct, water)
+
+    plt.imshow(showim3)
+    plt.show()
+
+if rig and loader:
+    datain2, water, water_dist, slope, veg, grass, shrub, tree, set_map, struct, final_seeds, graph = dataGen.load_ALL()
 
     plt.imshow(slope, cmap='Greys')
     plt.show()
@@ -911,17 +973,21 @@ if True:
     plt.imshow(veg)  # cmap='Dark2_r')
     plt.show()
 
-
-
     plt.imshow(np.delete(set_map, 1, 2))  # cmap='Dark2_r')
     plt.show()
 
     plt.imshow(np.delete(set_map, 3, 2))  # cmap='Dark2_r')
     plt.show()
 
+    final_seeds, struct, graph = settlement_seeds(set_map, datain2, water, water_dist, slope, 6)
 
+    showim = handy_functions.hillshade(datain2, 0, 30)
+    showim3 = np.dstack((showim, showim, showim))
 
+    struct_painter(showim3, struct, water)
 
+    plt.imshow(showim3)
+    plt.show()
 
             
             
