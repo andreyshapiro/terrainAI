@@ -17,7 +17,7 @@ Building_Dict = {}
 L = [[0, ("Empty",0,(0,0,0))],
      [1, ("House",1,(.7,.7,1))], [3, ("Manner",1,(.73,.73,1))], [-1, ("Path", -1, (0.92, 0.67, 0.31))], [-10, ("Bridge", -2, (0.92, 0.67, 0.31))],
      [400, ("Meeting Spot", -1, (.7,1,.8))], [401, ("Bell", -1, (.7, 1, .8 ))], [402, ("Meeting Square", -1, (.7, 1, .8 ))],
-     [403, ("Meeting House", 1, (.7, 1, 1))], [404, ("Amphitheater", -1, (.7, 1, .8 ))],
+     [403, ("Meeting House", -1, (.7, 1, 1))], [404, ("Amphitheater", -1, (.7, 1, .8 ))],
      [410, ("Well", 1, (.2,.2,1))],
      [200, ("Dock", -2, (0.82, 0.77, 0.15))], [201, ("Farm", 0, (0.76, .9, 0.34))]]
 for i in range(len(L)):
@@ -130,7 +130,7 @@ class travel_graph():
             if n>0:
                 es.append((m+1,n-1, self.edges10[m][n-1]))
             if n<ylen-1:
-                es.append((m + 1, n + 1, self.edges10[m][n]))
+                es.append((m + 1, n + 1, self.edges01[m][n]))
         if n>0:
             es.append((m,n-1,self.edgesDU[m][n-1]))
         if n<ylen-1:
@@ -171,6 +171,10 @@ class travel_graph():
 
 # given a graph, and two points, it will find the shortest path between them and an updated graph.
 def path_maker(graph, datain, x1, y1, x2, y2):
+
+    # housekeeping so we don't crash if try to make a path from a tile to itself
+    if (x1,y1) == (x2,y2): return 0, []
+
     # first we find the nodes the points correspond to
     (w, z) = graph.bottom_left
     (m1, n1)= (x1-w,y1-z)
@@ -184,7 +188,17 @@ def path_maker(graph, datain, x1, y1, x2, y2):
     graphcopy = np.full((xlen,ylen,4), (max_v, 0, -1,-1)) #g, n/open/closed, parent_x, parent_y)
     print("finished initiating graphcopy")
 
-    node_stack = [(0,m1,n1,0,0)]  # (f, x, y, g, h)
+    # initialize the node_stack to have the nbrs. Note this costs 0 since the origin tile may be impassible
+    node_stack = [] # (f, x, y, g, h)
+    es = graph.get_edges(m1,n1)
+    for (e1,e2,c) in es:
+        graphcopy[e1][e2] = (0, 1, m1, n1)
+        # calculate the heuristic: difference in altitudes + # of tiles
+        h = np.sqrt(np.abs(e1 - m2) ** 2 + np.abs(e2 - n2) ** 2) + np.abs(
+            datain[w + e1][z + e2] - height_goal) * aspect * h_val / path_factor
+
+        # add in the new node, and sort according to h+g2
+        bisect.insort(node_stack, (h, e1, e2, 0, h))
 
     print_val = 10
     print_val2 = 15
@@ -207,6 +221,7 @@ def path_maker(graph, datain, x1, y1, x2, y2):
         # then we add the new edges reached (rather, the nodes they reach at an improved rate, and the directions)
         es = graph.get_edges(m,n)
         for (e1,e2,c) in es:
+
             if graphcopy[e1][e2][1] == 2: continue # location is closed -> skip it.
             if g+c < graphcopy[e1][e2][0]:
                 if graphcopy[e1][e2][1] == 1:  # if location open, then find and delete it before adding it in again
@@ -271,7 +286,7 @@ def graph_maker(graph, datain, structure, water):
                 graph.edgesDU[xi][yj] = max_v
                 graph.edges01[xi][yj] = max_v
             else:
-                if Building_Dict[structure[x+1][y]][0][1]>0>0 or (water[x + 1][y] > 1 and Building_Dict[structure[x+1][y]][0][1]>=-1):
+                if Building_Dict[structure[x+1][y]][0][1]>0 or (water[x + 1][y] > 1 and Building_Dict[structure[x+1][y]][0][1]>=-1):
                     graph.edgesLR[xi][yj] = max_v
                 elif (water[x + 1][y] > 0 and Building_Dict[structure[x+1][y]][0][1]>=-1) or (water[x][y] > 0  and Building_Dict[structure[x][y]][0][1]>=-1):
                     graph.edgesLR[xi][yj] = 250
@@ -904,12 +919,12 @@ def village_path_tester(len_in):
 
 #village_path_tester(512)
 loader = True
-rig = True
+rig = False
 if rig and not loader:
-    len_in = 512
+    len_in = 1024
     datain = dataGen.get_sample_unnormed(len_in)  # handy_functions.erode_Semi(handy_functions.genSample(256,256),10)
 
-    s = water_gen.spring(datain, 10 / (256 * 256), len_in, len_in)
+    s = water_gen.spring(datain, 1 / (256 * 256), len_in, len_in)
     datain2 = np.copy(datain)
     water = water_gen.draw_water_erode2(datain2, s, 14)
 
@@ -956,30 +971,64 @@ if rig and not loader:
 
 if rig and loader:
     datain2, water, water_dist, slope, veg, grass, shrub, tree, set_map, struct, final_seeds, graph = dataGen.load_ALL()
+    if False:
+        plt.imshow(slope, cmap='Greys')
+        plt.show()
 
-    plt.imshow(slope, cmap='Greys')
-    plt.show()
+        plt.imshow(np.sqrt(water_dist), cmap='Oranges')
+        plt.show()
 
-    plt.imshow(np.sqrt(water_dist), cmap='Oranges')
-    plt.show()
+        plt.imshow(np.concatenate((tree, shrub, grass), axis=1), cmap='Greens')
+        plt.show()
 
-    plt.imshow(np.concatenate((tree, shrub, grass), axis=1), cmap='Greens')
-    plt.show()
+        # second_row = np.concatenate((veg, np.subtract(veg,water*10)), axis = 1)
+        plt.imshow(water, cmap='gist_earth')  # np.concatenate((first_row, second_row), axis =0),cmap='gist_earth')
+        plt.show()
 
-    # second_row = np.concatenate((veg, np.subtract(veg,water*10)), axis = 1)
-    plt.imshow(water, cmap='gist_earth')  # np.concatenate((first_row, second_row), axis =0),cmap='gist_earth')
-    plt.show()
+        plt.imshow(veg)  # cmap='Dark2_r')
+        plt.show()
 
-    plt.imshow(veg)  # cmap='Dark2_r')
-    plt.show()
+        plt.imshow(np.delete(set_map, 1, 2))  # cmap='Dark2_r')
+        plt.show()
 
-    plt.imshow(np.delete(set_map, 1, 2))  # cmap='Dark2_r')
-    plt.show()
+        plt.imshow(np.delete(set_map, 3, 2))  # cmap='Dark2_r')
+        plt.show()
 
-    plt.imshow(np.delete(set_map, 3, 2))  # cmap='Dark2_r')
-    plt.show()
+    #final_seeds, struct, graph = settlement_seeds(set_map, datain2, water, water_dist, slope, 26)
 
-    final_seeds, struct, graph = settlement_seeds(set_map, datain2, water, water_dist, slope, 6)
+    for v in final_seeds:
+        print(v)
+
+    g = travel_graph(1024, 1024, (0, 0))
+    graph_maker(g, datain2, struct, water)
+
+    for v in final_seeds:
+        (v1, v2) = v.center
+        for b in v.building_list:
+            if b.type < 400 and b.type != 201:  # Note to self: need a better system for excluding path-making
+                (x, y) = b.location[0]
+                val, dir = path_maker(g, datain2, x, y, v1, v2)
+                print("got there at ", val)
+                g.update_path(dir)
+                for (a, b) in dir:
+                    if struct[a][b] == 0: struct[a][b] = -1
+
+    print("inner paths done")
+
+    # Note to self: there is probably a better way to do this considering the fact that the number of villages is small
+    # ideally we would do something like v1~v2, v1~v3, v2~v3, v1~v4, v2~v4, v3~v4, ...
+    for i in range(len(final_seeds)):
+        (v1, v2) = final_seeds[i].center
+        for j in range(i + 1, len(final_seeds)):
+            (v3, v4) = final_seeds[j].center
+            if np.sqrt((v1 - v3) ** 2 + (v2 - v4) ** 2) < 10000 / handy_functions.unit_length:
+                val, dir = path_maker(g, datain2, v1, v2, v3, v4)
+                print("got there at ", val)
+                g.update_path(dir)
+                for (a, b) in dir:
+                    if struct[a][b] == 0: struct[a][b] = -1
+
+    print("outer paths done")
 
     showim = handy_functions.hillshade(datain2, 0, 30)
     showim3 = np.dstack((showim, showim, showim))

@@ -9,7 +9,8 @@ gdal.UseExceptions()
 runREST = 0
 run = 0
 dataLen = 200 * 4 * 4
-foldername = "to-load1"
+foldername_loading = "to-load1"
+foldername_saving = "to-load1"
 
 
 def get_sample(size):
@@ -51,80 +52,82 @@ def get_sample_unnormed(size):
 
 
 def load_elev():
-    return np.load(foldername + "/elev.npy")
+    return np.load(foldername_loading + "/elev.npy")
 
 
 def save_elev(array):
-    np.save(foldername+"/elev.npy", array, allow_pickle=True, fix_imports=True)
+    np.save(foldername_saving+"/elev.npy", array, allow_pickle=True, fix_imports=True)
 
 
 def load_water():
-    return np.load(foldername + "/water.npy"), np.load(foldername + "/water_dist.npy")
+    return np.load(foldername_loading + "/water.npy")
 
 
-def save_water(array1, array2):
-    np.save(foldername+"/water.npy", array1, allow_pickle=True, fix_imports=True)
-    np.save(foldername + "/water_dist.npy", array2, allow_pickle=True, fix_imports=True)
+def save_water(array1):
+    np.save(foldername_saving+"/water.npy", array1, allow_pickle=True, fix_imports=True)
+
 
 
 def load_veg():
-    return np.load(foldername + "/veg.npy")
+    return np.load(foldername_loading + "/veg.npy")
 
 
 def save_veg(array):
-    np.save(foldername+"/veg.npy", array, allow_pickle=True, fix_imports=True)
+    np.save(foldername_saving+"/veg.npy", array, allow_pickle=True, fix_imports=True)
 
 
 def load_fert_maps():
-    return (np.load(foldername + "/grass.npy"), np.load(foldername + "/shrub.npy"), np.load(foldername + "/tree.npy"))
+    return (np.load(foldername_loading + "/grass.npy"), np.load(foldername_loading + "/shrub.npy"),
+            np.load(foldername_loading + "/tree.npy"))
 
 
 def save_fert_maps(array1, array2, array3):
-    np.save(foldername+"/grass.npy", array1, allow_pickle=True, fix_imports=True)
-    np.save(foldername + "/shrub.npy", array2, allow_pickle=True, fix_imports=True)
-    np.save(foldername + "/tree.npy", array3, allow_pickle=True, fix_imports=True)
+    np.save(foldername_saving+"/grass.npy", array1, allow_pickle=True, fix_imports=True)
+    np.save(foldername_saving + "/shrub.npy", array2, allow_pickle=True, fix_imports=True)
+    np.save(foldername_saving + "/tree.npy", array3, allow_pickle=True, fix_imports=True)
 
 
 def load_slope():
-    return np.load(foldername + "/slope.npy")
+    return np.load(foldername_loading + "/slope.npy"), np.load(foldername_loading + "/water_dist.npy")
 
 
-def save_slope(array):
-    np.save(foldername+"/slope.npy", array, allow_pickle=True, fix_imports=True)
+def save_slope(array, water_distance):
+    np.save(foldername_saving+"/slope.npy", array, allow_pickle=True, fix_imports=True)
+    np.save(foldername_saving + "/water_dist.npy", water_distance, allow_pickle=True, fix_imports=True)
 
 
 def load_set_map():
-    return np.load(foldername + "/set_map.npy")
+    return np.load(foldername_loading + "/set_map.npy")
 
 
 def save_set_map(array):
-    np.save(foldername+"/set_map.npy", array, allow_pickle=True, fix_imports=True)
+    np.save(foldername_saving+"/set_map.npy", array, allow_pickle=True, fix_imports=True)
 
 
 # gets struct, village, and, path graph
 def load_structs():
-    file = open(foldername + "/villages.pickle", 'rb')
-    file2 = open(foldername + "/graph.pickle", 'rb')
+    file = open(foldername_loading + "/villages.pickle", 'rb')
+    file2 = open(foldername_loading + "/graph.pickle", 'rb')
 
     v = pickle.load(file)
     g = pickle.load(file2)
 
     file.close()
     file2.close()
-    return (np.load(foldername + "/struct.npy"), v, g)
+    return (np.load(foldername_loading + "/struct.npy"), v, g)
 
 
 def save_structs(array, villages, graph):
-    np.save(foldername+"/struct.npy", array, allow_pickle=True, fix_imports=True)
+    np.save(foldername_saving+"/struct.npy", array, allow_pickle=True, fix_imports=True)
 
-    if os.path.exists(foldername+'/villages.pickle'):
-        os.remove(foldername+'/villages.pickle')
+    if os.path.exists(foldername_saving+'/villages.pickle'):
+        os.remove(foldername_saving+'/villages.pickle')
 
-    if os.path.exists(foldername+'/graph.pickle'):
-        os.remove(foldername+'/graph.pickle')
+    if os.path.exists(foldername_saving+'/graph.pickle'):
+        os.remove(foldername_saving+'/graph.pickle')
 
-    file = open(foldername + "/villages.pickle", 'ab')
-    file2 = open(foldername + "/graph.pickle", 'ab')
+    file = open(foldername_saving + "/villages.pickle", 'ab')
+    file2 = open(foldername_saving + "/graph.pickle", 'ab')
 
     pickle.dump(villages, file)
     file.close()
@@ -135,8 +138,8 @@ def save_structs(array, villages, graph):
 
 def save_ALL(elev, water, water_dist, slope, veg, grass, shrub, tree, set_map, struct, villages, graph):
     save_elev(elev)
-    save_water(water, water_dist)
-    save_slope(slope)
+    save_water(water)
+    save_slope(slope, water_dist)
     save_veg(veg)
     save_fert_maps(grass,shrub,tree)
     save_set_map(set_map)
@@ -145,8 +148,8 @@ def save_ALL(elev, water, water_dist, slope, veg, grass, shrub, tree, set_map, s
 
 def load_ALL():
     elev = load_elev()
-    water, water_dist = load_water()
-    slope = load_slope()
+    water = load_water()
+    slope, water_dist = load_slope()
     veg = load_veg()
     grass, shrub, tree = load_fert_maps()
     set_map = load_set_map()

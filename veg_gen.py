@@ -93,8 +93,8 @@ def create_fertility(datain,water):
     return (f_tree, f_shrub, f_grass, slope_data, water_data)
 
 
-# randomly generates vegetation
-def gen_veg(datain,water):
+# uses pre-generated fertility map, slope, and water_data to generate vegetation
+def gen_veg_with_pregen(datain, tree, shrub, grass, slope, water_data):
     # Note to self: consider generating batches of batches
     # parameter controlling how frequently batches appear. The higher, the less frequent
     gen_param_tree = 1200
@@ -111,8 +111,6 @@ def gen_veg(datain,water):
     xlen = len(datain)
     ylen = len(datain[0])
     veg = np.zeros((xlen,ylen,3))
-
-    (tree, shrub, grass, slope, water_data) = create_fertility(datain, water)
 
     # first find where patches are to be generated.
     tree_seeds = []
@@ -165,7 +163,13 @@ def gen_veg(datain,water):
                 r = np.random.random()
                 if r<tree_num * tree[xi][yj]:
                     veg[xi][yj] = [0,1,0]
-    return veg, tree, shrub, grass, slope, water_data
+    return veg
+
+
+# randomly generates vegetation and also fertility maps and water_data and slope
+def gen_veg(datain, water):
+    (tree, shrub, grass, slope, water_data) = create_fertility(datain, water)
+    return gen_veg_with_pregen(datain, tree, shrub, grass, slope, water_data), tree, shrub, grass, slope, water_data
 
 if False:
     datain = dataGen.get_sample_unnormed(2048) #handy_functions.erode_Semi(handy_functions.genSample(256,256),10)
