@@ -497,6 +497,8 @@ def settlement_eval(elev, slope, water, water_dist, veg, grass):
     #suitability_map[:, :, 1] = np.power(len(sphere), 1/2) * np.power(suitability_map[:, :, 1], 1/2)  # np.sqrt(suitability_map[:, :, 1]) * sphere_radius
     #suitability_map[:, :, 0] *= 1.25  # np.sqrt(suitability_map[:, :, 0]) * sphere_radius
     suitability_map *= slope_factor * water_factor / len(sphere)  #
+    suitability_map[:,:, 1] = np.power(suitability_map[:, :, 1], 1/3)
+    suitability_map[:,:, 2] = np.power(suitability_map[:, :, 2], 1/2)
 
     return suitability_map[:,:,0:4]
 
@@ -655,7 +657,7 @@ def settlement_seeds(settlement_map, datain, water, water_dist, slope, num):
     rad_index = handy_functions.create_sphere(rad)
     rad_sq = (rad) ** 2
     # average of squares -> areas with one clear good industry are better than areas with a bit of everything
-    sumsett = np.sum(settlement_map * settlement_map, axis=2) / ((500.0 / handy_functions.unit_length)**2)
+    sumsett = np.sum(settlement_map * settlement_map, axis=2) / (xlen * ylen * (3 / handy_functions.unit_length)**2)
     final_seeds = []
 
     seeds = []
@@ -761,7 +763,10 @@ def settlement_seeds(settlement_map, datain, water, water_dist, slope, num):
         if v.A_T[0]>= v.A_T[1]:  # if agricultural, we generate farmland
             for house in range(1,6):
                 (m, n) = v.building_list[house].location[0]
-                no_tiles = 348480 * settlement_map[m][n][0] // (handy_functions.unit_length ** 2)
+                if v.industries[0] > v.industries[1]:
+                    no_tiles = 348480 * settlement_map[m][n][0] // (handy_functions.unit_length ** 2)
+                else:
+                    no_tiles = 34848 * settlement_map[m][n][0] // (handy_functions.unit_length ** 2)
                 farms = building_placer(shape, (m,n), no_tiles, 60,
                                         lambda i, j: validator_Farm(xlen, ylen, struct, water, water_dist, slope, i ,j))
                 for (i, j) in farms:

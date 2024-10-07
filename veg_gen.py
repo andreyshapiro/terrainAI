@@ -92,21 +92,49 @@ def create_fertility(datain,water):
             f_grass[x][y] = sG * wG**3
     return (f_tree, f_shrub, f_grass, slope_data, water_data)
 
+# takes a seed, and turns it into a list of seeds
+def seeding(center, data, sphere, order):
+    xlen, ylen = np.shape(data)
+    x,y = center
+    k = len(sphere)
+    for (i,j) in sphere:
+        xi = x+i
+        if xi>=0 and xi<xlen:
+            yj = y+j
+            if yj>=0 and yj<ylen:
+                return 1
+    return 0
+
+
+def s(center, sphere, num, order):
+    x,y = center
+    k = len(sphere)
+    out = [(x,y)]
+    out2 = []
+    for _ in range(order):
+        for (a,b) in out:
+            for _ in range(num):
+                (i,j) = sphere[np.random.randint(0, k)]
+                out2.append((a+i,b+j))
+        out = np.copy(out2)
+        out2 = []
+    return out
+
 
 # uses pre-generated fertility map, slope, and water_data to generate vegetation
 def gen_veg_with_pregen(datain, tree, shrub, grass, slope, water_data):
     # Note to self: consider generating batches of batches
     # parameter controlling how frequently batches appear. The higher, the less frequent
-    gen_param_tree = 1200
-    gen_param_shrub = 1000
-    gen_param_grass = 25
+    gen_param_tree = 3200
+    gen_param_shrub = 3200
+    gen_param_grass = 200
     # parameters controlling how many per batch and how much they disperse
-    tree_disperse = 80
-    tree_num = .04
-    shrub_disperse = 40
-    shrub_num = .2
-    grass_disperse = 30
-    grass_num = .1
+    tree_disperse = 16
+    tree_num = 2
+    shrub_disperse = 16
+    shrub_num = .25
+    grass_disperse = 12
+    grass_num = 1
 
     xlen = len(datain)
     ylen = len(datain[0])
@@ -135,34 +163,30 @@ def gen_veg_with_pregen(datain, tree, shrub, grass, slope, water_data):
     print("planting grass:")
     grass_sphere = handy_functions.create_sphere(grass_disperse)
     for (x,y) in tqdm(grass_seeds):
-        for (i,j) in grass_sphere:
-            xi = x+i
-            yj = y+j
-            if (xi>=0 and yj>=0 and xi<xlen and yj<ylen
-                    and grass[xi][yj]!= 0):
+        batches = s((x,y), grass_sphere, 3, 5)
+        for (a,b) in batches:
+            if 0 <= a < xlen and 0 <= b < ylen:
                 r = np.random.random()
-                if r<grass_num * grass[xi][yj]:
-                    veg[xi][yj] = [1,0,0]
+                if r < grass_num * (grass[a][b] ** 2):
+                    veg[a][b] = [1, 0, 0]
     print("planting shrubs:")
     shrub_sphere = handy_functions.create_sphere(shrub_disperse)
-    for (x,y) in tqdm(shrub_seeds):
-        for (i,j) in shrub_sphere:
-            xi = x+i
-            yj = y+j
-            if (xi>=0 and yj>=0 and xi<xlen and yj<ylen):
+    for (x, y) in tqdm(shrub_seeds):
+        batches = s((x, y), shrub_sphere, 2, 9)
+        for (a, b) in batches:
+            if 0 <= a < xlen and 0 <= b < ylen:
                 r = np.random.random()
-                if r<shrub_num * shrub[xi][yj]:
-                    veg[xi][yj] = [0,0,1]
+                if r < shrub_num * (shrub[a][b] ** 2):
+                    veg[a][b] = [0, 0, 1]
     print("planting trees:")
     tree_sphere = handy_functions.create_sphere(tree_disperse)
-    for (x,y) in tqdm(tree_seeds):
-        for (i,j) in tree_sphere:
-            xi = x+i
-            yj = y+j
-            if (xi>=0 and yj>=0 and xi<xlen and yj<ylen):
+    for (x, y) in tqdm(tree_seeds):
+        batches = s((x, y), tree_sphere, 2, 9)
+        for (a, b) in batches:
+            if 0 <= a < xlen and 0 <= b < ylen:
                 r = np.random.random()
-                if r<tree_num * tree[xi][yj]:
-                    veg[xi][yj] = [0,1,0]
+                if r < tree_num * (tree[a][b] ** 8):
+                    veg[a][b] = [0, 1, 0]
     return veg
 
 

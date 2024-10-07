@@ -7,29 +7,49 @@ import water_gen
 import veg_gen
 import settlement
 
+preset = ["l", "n", "to-load2", "f"]
+use_preset = False
+
+i = input("Use preset? [y] or [n]")
+if i=="y":
+    use_preset = True
+
+def input_preset(string):
+    global use_preset
+    if use_preset:
+        i = preset.pop(0)
+        if not len(preset):
+            use_preset = False
+    else: i = input(string)
+    return i
+
+
+
+
+# begin by asking if we want to use a preset of inputs:
+
 
 # first we ask if they want to load data or generate new data (for now this does nothing, we just assume it's [g])
-
 while 1:
-    i = input("Load [l] or Generate [g]?")
+    i = input_preset("Load [l] or Generate [g]?")
     if i == 'l' or i == 'g':
         break
     else: print("please input l or g")
 
 save = False
-k = input("Automatic Saving? [y] or [n]")
+k = input_preset("Automatic Saving? [y] or [n]")
 if k == "y":
     save = True
-    targetfolder = input("where would you like to save to?")
+    targetfolder = input_preset("where would you like to save to?")
     dataGen.foldername_saving = targetfolder
 
 
 # elev, water, fert_maps, veg, set_map, village, all
 skip = 0
 if i == 'l':
-    filepath = input("where would you like to load from?")
+    filepath = input_preset("where would you like to load from?")
     dataGen.foldername_loading = filepath
-    i = input("up to what stage would you like to load data? \n "
+    i = input_preset("up to what stage would you like to load data? \n "
               "[e] - elevation \n [w] - water \n [f] - fertility_maps (includes water distance and slope) \n [veg] - vegetation"
               "\n [s] - set_map \n [vil] - village_seeds (includes struct and path graph) \n [a] - ALL")
     if i=='e':
@@ -53,7 +73,7 @@ if skip<=0:
     # for now most of this is skipped
 
     size = 512
-    i = input("size? (512 default)")
+    i = input_preset("size? (512 default)")
     if i.isdigit(): size = int(i)
     else: print("Invalid size input, using default")
 
@@ -63,7 +83,7 @@ if skip<=0:
 if skip<1:
     # next, we ask them to choose if they want to use real data or AI generated. For now, we assume it's real data.
     gen_type = 1
-    i = input("Use Real [r] or Model-generated terrain [m]?")
+    i = input_preset("Use Real [r] or Model-generated terrain [m]?")
     if i == 'm': gen_type = 0
 
     data = []
@@ -74,7 +94,7 @@ if skip<1:
             data = dataGen.get_sample_unnormed(size)  # to be replaced with a call to the model
         hill = handy_functions.hillshade(data, 0, 30)
         handy_functions.plot_hillshade(data,hill)
-        i = input("happy with elevation map? [y] or [n]")
+        i = input_preset("happy with elevation map? [y] or [n]")
         if i == 'y': break
         else: print("trying again")
 
@@ -82,6 +102,7 @@ if skip<1:
         dataGen.save_elev(data)
 else:
     data = dataGen.load_elev()
+    hill = handy_functions.hillshade(data, 0, 30)
     size = len(data)
 
 if skip<2:
@@ -90,13 +111,13 @@ if skip<2:
     while 1:
         data2 = np.copy(data)
         factor = 1
-        i = input("input spring factor (higher means more springs - default 1)")
+        i = input_preset("input spring factor (higher means more springs - default 1)")
         if i.isdigit(): factor = int(i)
         springs = water_gen.spring(data2, factor / (256 * 256), size, size)
         water = water_gen.draw_water_erode2(data2, springs, 14)
         plt.imshow(water,cmap='gist_earth')
         plt.show()
-        i = input("happy with water generation? [y] or [n]")
+        i = input_preset("happy with water generation? [y] or [n]")
         if i == 'y':
             break
         else:
@@ -132,9 +153,10 @@ if skip<4:
     veg = []
     while 1:
         veg = veg_gen.gen_veg_with_pregen(data, tree, shrub, grass, slope, water_data)
-        plt.imshow(veg)
+        im1 = plt.imshow(veg)
+        #im2 = plt.imshow(hill, cmap='Greys_r', alpha=0.5)
         plt.show()
-        i = input("happy with veg generation (red = grass, green = trees, blue = shrubs)? [y] or [n]")
+        i = input_preset("happy with veg generation (red = grass, green = trees, blue = shrubs)? [y] or [n]")
         if i == 'y':
             break
         else:
@@ -163,7 +185,7 @@ if skip<6:
     # next we generate village seeds (along with path graph and struct)
     while 1:
         village_num = 6
-        i = input("number of villages? (6 default)")
+        i = input_preset("number of villages? (6 default)")
         if i.isdigit():
             village_num = int(i)
         else:
@@ -181,7 +203,7 @@ if skip<6:
         plt.imshow(showim3)
         plt.show()
 
-        i = input("happy with village generation? [y] or [n]")
+        i = input_preset("happy with village generation? [y] or [n]")
         if i == 'y':
             break
         else:
